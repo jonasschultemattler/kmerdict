@@ -193,7 +193,7 @@ void RSHash2::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&
     const uint64_t M2 = 1ULL << (m2+m2);
     r2 = sux::bits::EliasFano(minimizers2, M2);
 
-    std::cout << "mark skmers1...\n";
+    std::cout << "mark skmers2...\n";
     mark_minimizer_occurences<2>(no_skmers2, minimizers2_occurences);
 
     std::cout << "filling offsets_2...\n";

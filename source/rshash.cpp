@@ -29,16 +29,16 @@ struct cmd_arguments {
     std::filesystem::path d{};
     uint8_t k{31};
     uint8_t l{2};
-    uint8_t m1{16};
-    uint8_t m2{18};
-    uint8_t m3{20};
-    uint8_t t1{65};
-    uint8_t t2{65};
-    uint16_t t3{65};
+    uint8_t m1{18};
+    uint8_t m2{21};
+    uint8_t m3{23};
+    uint8_t t1{64};
+    uint8_t t2{64};
+    uint16_t t3{64};
 };
 
 void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
-    parser.add_positional_option(args.cmd, sharg::config{.description = "command options: build, query"});
+    parser.add_positional_option(args.cmd, sharg::config{.description = "command options: build, lookup, locate, bench"});
     parser.add_option(args.i, sharg::config{.short_id = 'i', .long_id = "input", .description = "provide input file"});
     parser.add_option(args.q, sharg::config{.short_id = 'q', .long_id = "query", .description = "provide query file"});
     parser.add_option(args.d, sharg::config{.short_id = 'd', .long_id = "dict", .description = "provide dict file"});
@@ -63,12 +63,13 @@ int check_arguments(sharg::parser &parser, cmd_arguments &args) {
         if(!parser.is_option_set('l'))
             throw sharg::user_input_error("specify level");
     }
-    else if(args.cmd == "query") {
+    else if(args.cmd == "lookup") {
         if(!parser.is_option_set('q'))
             throw sharg::user_input_error("provide query file.");
     }
-    else if(args.cmd == "lookup") {
-        
+    else if(args.cmd == "locate") {
+        if(!parser.is_option_set('q'))
+            throw sharg::user_input_error("provide query file.");
     }
     else
         throw sharg::user_input_error("illegal command");
@@ -125,8 +126,13 @@ int main(int argc, char** argv)
             index.build(text);
             index.save(args.d);
         }
+        // else if(args.l == 4) {
+        //     RSHashT index = RSHashT(args.k, args.m1, args.m2, 1, args.t1);
+        //     index.build(text);
+        //     index.save(args.d);
+        // }
     }
-    else if(args.cmd == "query") {
+    else if(args.cmd == "lookup") {
         std::cout << "loading queries...\n";
         std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> queries;
         load_file(args.q, queries);
@@ -143,7 +149,7 @@ int main(int argc, char** argv)
 
             std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
             for (auto query : queries) {
-                found += index.streaming_query(query, extensions);
+                found += index.streaming_lookup(query, extensions);
                 kmers += query.size() - index.getk() + 1;
             }
             std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
@@ -178,6 +184,20 @@ int main(int argc, char** argv)
             std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
             elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
         }
+        // else if(args.l == 4) {
+        //     std::cout << "loading dict...\n";
+        //     RSHashT index = RSHashT();
+        //     index.load(args.d);
+        //     std::cout << "querying...\n";
+
+        //     std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
+        //     for (auto query : queries) {
+        //         found += index.streaming_query(query, extensions);
+        //         kmers += query.size() - index.getk() + 1;
+        //     }
+        //     std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
+        //     elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
+        // }
         double ns_per_kmer = (double) elapsed.count() / kmers;
         
         std::cout << "==== query report:\n";
@@ -186,7 +206,43 @@ int main(int argc, char** argv)
         std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
         std::cout << "extensions = " << extensions << '\n';
     }
-    else if(args.cmd == "lookup") {
+    else if(args.cmd == "locate") {
+        std::cout << "loading queries...\n";
+        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> queries;
+        load_file(args.q, queries);
+
+        std::chrono::nanoseconds elapsed;
+        size_t kmers = 0;
+
+        if(args.l == 1) {
+            std::cout << "loading dict...\n";
+            RSHash1 index = RSHash1();
+            index.load(args.d);
+            std::cout << "locating...\n";
+
+            std::vector<std::pair<uint64_t, bool>> positions;
+
+            std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
+            uint64_t q = 0;
+            for (auto query : queries) {
+                // std::cout << q++ << ": ";
+                index.streaming_locate(query, positions);
+                kmers += query.size() - index.getk() + 1;
+            }
+            std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
+            elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
+
+            for (const auto& pos : positions) {
+                std::cout << "(" << pos.first << "," << pos.second << ")";
+        }
+        }
+        
+        double ns_per_kmer = (double) elapsed.count() / kmers;
+        
+        std::cout << "==== query report:\n";
+        std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
+    }
+    else if(args.cmd == "bench") {
         std::cout << "loading dict...\n";
         uint64_t found = 0;
         double ns_per_kmer;
