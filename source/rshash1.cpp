@@ -1,7 +1,6 @@
 #include <filesystem>
 #include <seqan3/io/sequence_file/all.hpp>
 #include <cereal/archives/binary.hpp>
-
 #include "rshash.hpp"
 #include "build.hpp"
 #include "io.hpp"
@@ -103,7 +102,7 @@ std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> RSHash1::get_frequent_skme
 }
 
 
-void RSHash1::build(std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &input)
+void RSHash1::build(std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &input, const bool locate)
 {
     no_text_kmers = mark_sequences(input, k, endpoints);
     size_t text_length = endpoints.size();
@@ -129,9 +128,25 @@ void RSHash1::build(std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &input
     auto freq_skmers = get_frequent_skmers(input);
 
     std::cout << "build level 2...\n";
-    for(auto & sequence : freq_skmers)
-        for(auto && window : sequence | rshash::views::kmerview({.window_size = k}))
-            hashmap.insert(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+    if(locate) {
+        std::unordered_map<uint64_t, uint8_t> kmer_frequencies;
+        for(auto & sequence : freq_skmers) {
+            for(auto && window : sequence | rshash::views::kmerview({.window_size = k})) {
+                const uint64_t canonical_kmer = std::min<uint64_t>(window.kmer_value, window.kmer_value_rev);
+                if(kmer_frequencies[canonical_kmer]++ >= 255)
+                    kmer_frequencies[canonical_kmer] = 255;
+            }
+        }
+        for(const auto& [kmer, frequency] : kmer_frequencies) {
+            if(frequency < 255)
+                hashmap.insert(kmer);
+        }
+    }
+    else {
+        for(auto & sequence : freq_skmers)
+            for(auto && window : sequence | rshash::views::kmerview({.window_size = k}))
+                hashmap.insert(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+    }
 
     std::cout << "copy text...\n";
     text = pack_dna4_to_uint64(input);
@@ -596,8 +611,10 @@ void RSHash1::streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4> &q
             locate_buffer(kmer_buffer, offsets, no_minimiser, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position, right_minimiser_position, sequence_begin, sequence_end, positions);
             current_pos_minimiser = minimiser;
         }
-        else
+        else {
             current_neg_minimiser = minimiser;
+            // if(hashmap.contains(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev)))
+        }
 
     }
 

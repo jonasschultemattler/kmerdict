@@ -28,6 +28,7 @@ RSHash2::RSHash2(
       mmermask2(compute_mask(2u * m2))
 {}
 
+
 template<int level>
 void RSHash2::mark_minimizer_occurences(const size_t no_skmers, const std::vector<uint8_t> &minimizer_occurences)
 {

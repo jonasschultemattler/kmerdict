@@ -91,7 +91,7 @@ public:
     uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&, bool verbose);
     uint64_t locate(const std::vector<uint64_t>&);
-    void build(std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
+    void build(std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const bool);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     void streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
     void save(const std::filesystem::path&);

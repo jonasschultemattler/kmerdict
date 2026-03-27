@@ -35,6 +35,7 @@ struct cmd_arguments {
     uint8_t t1{64};
     uint8_t t2{64};
     uint16_t t3{64};
+    bool loc{false};
 };
 
 void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
@@ -50,6 +51,7 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
     parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
+    parser.add_flag(args.loc, sharg::config{.long_id = "locate", .description = "build to locate"});
 }
 
 int check_arguments(sharg::parser &parser, cmd_arguments &args) {
@@ -113,7 +115,7 @@ int main(int argc, char** argv)
         std::cout << "building dict...\n";
         if(args.l == 1) {
             RSHash1 index = RSHash1(args.k, args.m1, args.t1);
-            index.build(text);
+            index.build(text, args.loc);
             index.save(args.d);
         }
         else if(args.l == 2) {
