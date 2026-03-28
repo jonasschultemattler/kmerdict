@@ -160,9 +160,10 @@ public:
 };
 
 
-class RSHash3
+class RSHash
 {
 private:
+    uint64_t level;
     uint64_t k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
     uint64_t span1, span2, span3;
     uint64_t kmermask, mmermask1, mmermask2, mmermask3;
@@ -200,11 +201,14 @@ private:
     inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t);
     const inline uint64_t get_word64(uint64_t pos);
     const inline uint64_t get_base(uint64_t pos);
+    uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
 
 
 public:
-    RSHash3();
-    RSHash3(uint8_t const k, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const);
+    RSHash();
+    RSHash(uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const);
     uint8_t getk() { return k; }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
@@ -212,7 +216,7 @@ public:
     uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&, bool verbose);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
-    uint64_t streaming_query(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
     void print_info();
