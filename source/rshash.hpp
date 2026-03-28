@@ -160,67 +160,6 @@ public:
 };
 
 
-
-class RSHashT
-{
-private:
-    uint64_t k, m1, m_thres1, m2, m_thres2;
-    uint64_t span1, span2;
-    uint64_t kmermask, mmermask1, mmermask2;
-    mixer_64 m_hasher1, m_hasher2;
-    uint64_t no_text_kmers;
-    sux::bits::EliasFano<sux::util::AllocType::MALLOC> r1, r2;
-    bit_vector s1;
-    sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select;
-    bits::compact_vector offsets1, offsets2;
-    gtl::flat_hash_set<uint64_t> hashmap;
-    sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
-    std::vector<uint64_t> text;
-    template<int level>
-    void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
-    template<int level>
-    void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
-    template<int level>
-    void get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &);
-    template<int level>
-    inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
-    template<int level>
-    inline void update_minimiser(const uint64_t, const uint64_t, uint64_t&, size_t &, size_t &);
-    template<int level>
-    inline bool check(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
-    template<int level>
-    inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t, const uint64_t, const uint64_t);
-    template<int level>
-    inline bool check_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &);
-    template<int level>
-    inline bool check_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &);
-    template<int level>
-    inline bool check_overlap(uint64_t, uint64_t, uint64_t &, uint64_t &);
-    template<int level>
-    inline bool lookup_buffer(uint64_t *, uint64_t *, const size_t, const uint64_t,  const uint64_t, uint64_t &, const size_t, const size_t, bool &, uint64_t &, uint64_t &);
-    inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t);
-    const inline uint64_t get_word64(uint64_t pos);
-    const inline uint64_t get_base(uint64_t pos);
-
-
-public:
-    RSHashT();
-    RSHashT(uint8_t const k, uint8_t const m1, uint8_t const m_thres1,
-                 uint8_t const m2, uint8_t const m_thres2);
-    uint8_t getk() { return k; }
-    uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
-    size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
-    std::vector<uint64_t> rand_text_kmers(const uint64_t);
-    uint64_t access(const uint64_t, const size_t);
-    uint64_t lookup(const std::vector<uint64_t>&, bool verbose);
-    void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
-    uint64_t streaming_query(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    int save(const std::filesystem::path&);
-    int load(const std::filesystem::path&);
-    void print_info();
-};
-
-
 class RSHash3
 {
 private:
@@ -228,6 +167,7 @@ private:
     uint64_t span1, span2, span3;
     uint64_t kmermask, mmermask1, mmermask2, mmermask3;
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
+    uint64_t no_text_kmers;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> r1, r2, r3;
     bit_vector s1, s2, s3;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
@@ -236,13 +176,19 @@ private:
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level>
+    void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
+    template<int level>
+    void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
+    template<int level>
+    void get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &);
+    template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
     inline void update_minimiser(const uint64_t, const uint64_t, uint64_t&, size_t &, size_t &);
     template<int level>
     inline bool check(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
     template<int level>
-    inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t, const uint64_t, const uint64_t);
+    inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t, const uint64_t);
     template<int level>
     inline bool check_overlap(uint64_t, uint64_t, uint64_t &, uint64_t &);
     template<int level>
@@ -258,16 +204,16 @@ private:
 
 public:
     RSHash3();
-    RSHash3(uint8_t const k, uint8_t const m1, uint8_t const m_thres1,
-                 uint8_t const m2, uint8_t const m_thres2, uint8_t const m3, uint8_t const m_thres3);
+    RSHash3(uint8_t const k, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const);
     uint8_t getk() { return k; }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
     std::vector<uint64_t> rand_text_kmers(const uint64_t);
     uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&, bool verbose);
-    int build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
+    void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_query(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
+    void print_info();
 };
