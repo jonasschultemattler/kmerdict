@@ -1,51 +1,23 @@
 #include <seqan3/alphabet/nucleotide/dna4.hpp>
 #include <seqan3/alphabet/container/bitpacked_sequence.hpp>
+#include <seqan3/io/sequence_file/all.hpp>
 #include <sux/bits/SimpleSelect.hpp>
 #include <gtl/phmap.hpp>
 #include "compact_vector.hpp"
 #include "EliasFano.hpp"
 #include "minimiser_views.hpp"
-
+#include "util.hpp"
 
 using namespace seqan3::literals;
 using namespace seqan3::contrib::sdsl;
-
-
-static inline constexpr uint64_t compute_mask(uint64_t const size)
-{
-    assert(size > 0u);
-    assert(size <= 64u);
-
-    if (size == 64u)
-        return std::numeric_limits<uint64_t>::max();
-    else
-        return (uint64_t{1u} << size) - 1u;
-}
-
-static inline constexpr uint64_t crc(uint64_t x, uint64_t k) {
-    // assert(k <= 32);
-    uint64_t c = ~x;
-
-    /* swap byte order */
-    uint64_t res = __builtin_bswap64(c);
-
-    /* Swap nuc order in bytes */
-    const uint64_t c1 = 0x0f0f0f0f0f0f0f0f;              // ...0000.1111.0000.1111
-    const uint64_t c2 = 0x3333333333333333;              // ...0011.0011.0011.0011
-    res = ((res & c1) << 4) | ((res & (c1 << 4)) >> 4);  // swap 2-nuc order in bytes
-    res = ((res & c2) << 2) | ((res & (c2 << 2)) >> 2);  // swap nuc order in 2-nuc
-
-    /* Realign to the right */
-    res >>= 64 - 2 * k;
-
-    return res;
-}
 
 
 const uint64_t seed1 = 1;
 const uint64_t seed2 = 0x29'6D'BD'33'32'56'8C'64;
 const uint64_t seed3 = 0xE5'9A'38'5F'03'76'C9'F6;
 
+#ifndef RSHASH_HPP
+#define RSHASH_HPP
 
 class RSHash
 {
@@ -101,13 +73,32 @@ private:
 
 
 public:
-    RSHash();
-    RSHash(uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const, uint8_t const);
+    RSHash() : endpoints(std::vector<uint64_t>{}, 1),
+        r1(std::vector<uint64_t>{}, 1),
+        r2(std::vector<uint64_t>{}, 1),
+        r3(std::vector<uint64_t>{}, 1),
+        m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
+    {}
+    RSHash(uint8_t const k, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
+            uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3)
+        : k(k), level(level), m1(m1), m2(m2), m3(m3),
+        m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3),
+        span1(k-m1+1), span2(k-m2+1), span3(k-m3+1),
+        endpoints(std::vector<uint64_t>{}, 1),
+        r1(std::vector<uint64_t>{}, 1),
+        r2(std::vector<uint64_t>{}, 1),
+        r3(std::vector<uint64_t>{}, 1),
+        m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3),
+        kmermask(compute_mask(2u * k)),
+        mmermask1(compute_mask(2u * m1)),
+        mmermask2(compute_mask(2u * m2)),
+        mmermask3(compute_mask(2u * m3))
+    {}
     uint8_t getk() { return k; }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
     std::vector<uint64_t> rand_text_kmers(const uint64_t);
-    uint64_t access(const uint64_t, const size_t);
+    const inline uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&, bool verbose);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
@@ -116,3 +107,23 @@ public:
     int load(const std::filesystem::path&);
     void print_info();
 };
+
+const inline uint64_t RSHash::get_word64(uint64_t pos) {
+    uint64_t block = pos >> 5;
+    uint64_t shift = (pos & 31) << 1;
+    uint64_t lo = text[block];
+    uint64_t hi = text[block + 1];
+
+    uint64_t shift_mask = -(shift != 0);
+    return (lo >> shift) | ((hi << (64 - shift)) & shift_mask);
+}
+
+const inline uint64_t RSHash::get_base(uint64_t pos) {
+    return (text[pos >> 5] >> ((pos & 31) << 1)) & 3ULL;
+}
+
+const inline uint64_t RSHash::access(const uint64_t unitig_id, const size_t offset) {
+    return get_word64(offset) & kmermask;
+}
+
+#endif
