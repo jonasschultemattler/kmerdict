@@ -79,7 +79,6 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
     parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
-    parser.add_flag(args.loc, sharg::config{.long_id = "locate", .description = "enable locate function"});
 }
 
 int check_arguments(sharg::parser &parser, cmd_arguments &args) {
@@ -185,27 +184,25 @@ int main(int argc, char** argv)
         std::chrono::nanoseconds elapsed;
         size_t kmers = 0;
 
-        if(args.l == 1) {
-            std::cout << "loading dict...\n";
-            RSHash index = RSHash();
-            index.load(args.d);
-            std::cout << "locating...\n";
+        std::cout << "loading dict...\n";
+        RSHash index = RSHash();
+        index.load(args.d);
 
-            std::vector<std::pair<uint64_t, bool>> positions;
+        std::cout << "locating...\n";
+        std::vector<std::pair<uint64_t, bool>> positions;
 
-            std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
-            uint64_t q = 0;
-            for (auto query : queries) {
-                // std::cout << q++ << ": ";
-                index.streaming_locate(query, positions);
-                kmers += query.size() - index.getk() + 1;
-            }
-            std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
-            elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
-
-            for (const auto& pos : positions) {
-                std::cout << "(" << pos.first << "," << pos.second << ")";
+        std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
+        uint64_t q = 0;
+        for (auto query : queries) {
+            // std::cout << q++ << ": ";
+            index.streaming_locate(query, positions);
+            kmers += query.size() - index.getk() + 1;
         }
+        std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
+        elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
+
+        for (const auto& pos : positions) {
+            std::cout << "(" << pos.first << "," << pos.second << ")";
         }
         
         double ns_per_kmer = (double) elapsed.count() / kmers;
@@ -219,7 +216,6 @@ int main(int argc, char** argv)
         uint64_t found = 0;
         double ns_per_kmer;
         const int rounds = 5;
-        const bool verbose = false;
         std::vector<uint64_t> kmers;
 
         RSHash index = RSHash();
@@ -235,7 +231,7 @@ int main(int argc, char** argv)
         while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
             kmers = index.rand_text_kmers(1000000);
             t_start = std::chrono::high_resolution_clock::now();
-            found = index.lookup(kmers, verbose);
+            found = index.lookup(kmers);
             t_stop = std::chrono::high_resolution_clock::now();
             elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
             ns_per_kmer = (double) elapsed.count() / kmers.size();
@@ -251,7 +247,6 @@ int main(int argc, char** argv)
         std::cout << "pos_time_per_kmer = " << lookup_time_sum/round << '\n';
 
         std::cout << "bench neg lookup...\n";
-
         round = 0;
         error = 0.0;
         lookup_time_sum = 0.0;
@@ -259,7 +254,7 @@ int main(int argc, char** argv)
         while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
             kmers = rand_kmers(1000000, index.getk());
             t_start = std::chrono::high_resolution_clock::now();
-            found = index.lookup(kmers, verbose);
+            found = index.lookup(kmers);
             t_stop = std::chrono::high_resolution_clock::now();
             elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
             ns_per_kmer = (double) elapsed.count() / kmers.size();

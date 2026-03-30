@@ -4,8 +4,34 @@
 #include "rshash.hpp"
 
 
-// todo: level 3
-uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers, bool verbose)
+uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
+{
+    uint64_t occurences = 0;
+    uint64_t* offsets = new uint64_t[m_thres1];
+    
+    uint64_t minimiser, minimiser_rank;
+    size_t left_minimiser_position, right_minimiser_position;
+
+    for(uint64_t kmer : kmers) {
+        const uint64_t kmer_rc = crc(kmer, k);
+        minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+
+        if(minimiser_rank = r1.rank(minimiser); r1.rank(minimiser + 1) - minimiser_rank) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+
+            occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else
+            occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+    }
+
+    delete[] offsets;
+
+    return occurences;
+}
+
+uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
 {
     uint64_t occurences = 0;
 
@@ -40,6 +66,55 @@ uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers, bool verbose)
     delete[] offsets;
 
     return occurences;
+}
+
+uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
+{
+    uint64_t occurences = 0;
+
+    uint64_t* offsets = new uint64_t[m_thres3];
+    
+    uint64_t minimiser, minimiser_rank;
+    size_t left_minimiser_position, right_minimiser_position;
+
+    for(uint64_t kmer : kmers) {
+        const uint64_t kmer_rc = crc(kmer, k);
+        minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+
+        if(minimiser_rank = r1.rank(minimiser); r1.rank(minimiser + 1) - minimiser_rank) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+
+            occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else {
+            minimiser = find_minimiser<2>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+            if(minimiser_rank = r2.rank(minimiser); r2.rank(minimiser + 1) - minimiser_rank) {
+                size_t p = s2_select.select(minimiser_rank);
+                size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
+
+                occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+            }
+            else
+                occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+        }
+    }
+
+    delete[] offsets;
+
+    return occurences;
+}
+
+uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers)
+{
+    if(level == 1)
+        return lookup1(kmers);
+    else if(level == 2)
+        return lookup2(kmers);
+    else if(level == 3)
+        return lookup3(kmers);
+    else
+        return 0;
 }
 
 

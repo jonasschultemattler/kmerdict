@@ -16,6 +16,7 @@ const uint64_t seed1 = 1;
 const uint64_t seed2 = 0x29'6D'BD'33'32'56'8C'64;
 const uint64_t seed3 = 0xE5'9A'38'5F'03'76'C9'F6;
 
+
 #ifndef RSHASH_HPP
 #define RSHASH_HPP
 
@@ -63,6 +64,9 @@ private:
     uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    uint64_t lookup1(const std::vector<uint64_t>&);
+    uint64_t lookup2(const std::vector<uint64_t>&);
+    uint64_t lookup3(const std::vector<uint64_t>&);
     template<int level>
     inline void report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
     template<int level>
@@ -99,7 +103,7 @@ public:
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
     std::vector<uint64_t> rand_text_kmers(const uint64_t);
     const inline uint64_t access(const uint64_t, const size_t);
-    uint64_t lookup(const std::vector<uint64_t>&, bool verbose);
+    uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     void streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
