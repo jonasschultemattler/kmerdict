@@ -109,7 +109,56 @@ public:
     void streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
-    void print_info();
+    void print_info() {
+        const size_t N = text.size()*32;
+        const size_t offset_width = std::bit_width(N);
+        const uint64_t M1 = 1ULL << (m1+m1);
+        const uint64_t M2 = 1ULL << (m2+m2);
+        const uint64_t M3 = 1ULL << (m3+m3);
+        const uint64_t no_minimizers1 = r1.rank(M1);
+        const uint64_t no_skmers1 = s1.size();
+        const uint64_t no_minimizers2 = r2.rank(M2);
+        const uint64_t no_skmers2 = s2.size();
+        const uint64_t no_minimizers3 = r3.rank(M3);
+        const uint64_t no_skmers3 = s3.size();
+
+        std::cout << "====== report ======\n";
+        std::cout << "text length: " << N << "\n";
+        std::cout << "textkmers: " << no_text_kmers <<  '\n';
+    
+        std::cout << "no minimiser1: " << no_minimizers1 << "\n";
+        std::cout << "no distinct minimiser1: " << no_skmers1 << "\n";
+        std::cout << "avg superkmers1: " << (double) no_skmers1/no_minimizers1 <<  '\n';
+        std::cout << "no minimiser2: " << no_minimizers2 << "\n";
+        std::cout << "no distinct minimiser2: " << no_skmers2 << "\n";
+        std::cout << "avg superkmers2: " << (double) no_skmers2/no_minimizers2 <<  '\n';
+        std::cout << "no minimiser3: " << no_minimizers3 << "\n";
+        std::cout << "no distinct minimiser3: " << no_skmers3 << "\n";
+        std::cout << "avg superkmers3: " << (double) no_skmers3/no_minimizers3 <<  '\n';
+        std::cout << "no kmers HT: " << hashmap.size() << " " << (double) hashmap.size()/no_text_kmers*100 << "%\n";
+
+        std::cout << "density r1: " << (double) no_minimizers1/M1*100 << "%\n";
+        std::cout << "density r2: " << (double) no_minimizers2/M2*100 << "%\n";
+        std::cout << "density r3: " << (double) no_minimizers3/M3*100 << "%\n";
+        std::cout << "density s1: " << (double) no_minimizers1/(no_skmers1+1)*100 <<  "%\n";
+        std::cout << "density s2: " << (double) no_minimizers2/(no_skmers2+1)*100 <<  "%\n";
+        std::cout << "density s3: " << (double) no_minimizers3/(no_skmers3+1)*100 <<  "%\n";
+        std::cout << "\nspace per kmer in bit:\n";
+        std::cout << "text: " << (double) 2*N/no_text_kmers << "\n";
+        std::cout << "endpoints: " << (double) endpoints.bitCount()/no_text_kmers << "\n";
+        std::cout << "offsets1: " << (double) no_skmers1*offset_width/no_text_kmers << "\n";
+        std::cout << "offsets2: " << (double) no_skmers2*offset_width/no_text_kmers << "\n";
+        std::cout << "offsets3: " << (double) no_skmers3*offset_width/no_text_kmers << "\n";
+        std::cout << "Hashtable: " << (double) hashmap.capacity()*(sizeof(uint64_t) + 1)*8/no_text_kmers << "\n";
+        std::cout << "R_1: " << (double) r1.bitCount()/no_text_kmers << "\n";
+        std::cout << "R_2: " << (double) r2.bitCount()/no_text_kmers << "\n";
+        std::cout << "R_3: " << (double) r3.bitCount()/no_text_kmers << "\n";
+        std::cout << "S_1: " << (double) (no_skmers1+1)/no_text_kmers << "\n";
+        std::cout << "S_2: " << (double) (no_skmers2+1)/no_text_kmers << "\n";
+        std::cout << "S_3: " << (double) (no_skmers3+1)/no_text_kmers << "\n";
+    
+        std::cout << "total: " << (double) (no_skmers1*offset_width+no_skmers2*offset_width+no_skmers3*offset_width+2*N+r1.bitCount()+r2.bitCount()+r3.bitCount()+no_skmers1+1+s1_select.bitCount()+no_skmers2+1+s2_select.bitCount()+no_skmers3+1+s3_select.bitCount()+endpoints.bitCount()+65*hashmap.bucket_count())/no_text_kmers << "\n";
+    }
 };
 
 const inline uint64_t RSHash::get_word64(uint64_t pos) {
