@@ -1,250 +1,1222 @@
-#include <seqan3/core/debug_stream.hpp>
-#include <sharg/all.hpp>
+#include <filesystem>
 #include <seqan3/io/sequence_file/all.hpp>
+#include <cereal/archives/binary.hpp>
 #include "rshash.hpp"
+#include "build.hpp"
+#include "io.hpp"
+#include "minimiser_views.hpp"
 
 
-std::vector<uint64_t> rand_kmers(const uint64_t n, const uint64_t k) {
-    const uint64_t mask = compute_mask(2u * k);
+RSHash::RSHash() :
+    endpoints(std::vector<uint64_t>{}, 1),
+    r1(std::vector<uint64_t>{}, 1),
+    r2(std::vector<uint64_t>{}, 1),
+    r3(std::vector<uint64_t>{}, 1),
+    m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
+{}
 
-    std::uniform_int_distribution<uint64_t> distr;
-    std::mt19937_64 m_rand(1);
-    std::vector<uint64_t> kmers;
+RSHash::RSHash(
+    uint8_t const k, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
+    uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3)
+    : k(k), level(level), m1(m1), m2(m2), m3(m3),
+      m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3),
+      span1(k-m1+1), span2(k-m2+1), span3(k-m3+1),
+      endpoints(std::vector<uint64_t>{}, 1),
+      r1(std::vector<uint64_t>{}, 1),
+      r2(std::vector<uint64_t>{}, 1),
+      r3(std::vector<uint64_t>{}, 1),
+      m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3),
+      kmermask(compute_mask(2u * k)),
+      mmermask1(compute_mask(2u * m1)),
+      mmermask2(compute_mask(2u * m2)),
+      mmermask3(compute_mask(2u * m3))
+{}
+
+
+template<int level>
+void RSHash::mark_minimizer_occurences(const size_t no_skmers, const std::vector<uint8_t> &minimizer_occurences)
+{
+    auto & s = [&]() -> auto& {
+    if constexpr (level == 1) return s1;
+    else if constexpr (level == 2) return s2;
+    else if constexpr (level == 3) return s3;
+    }();
+
+    s = bit_vector(no_skmers+1, 0);
+    s[0] = 1;
+    uint64_t j = 0;
+    for(size_t i = 0; i < minimizer_occurences.size(); i++) {
+        j += minimizer_occurences[i];
+        s[j] = 1;
+    }
+
+    if constexpr (level == 1)
+        s1_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s.data()), no_skmers+1, 3);
+    if constexpr (level == 2)
+        s2_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s.data()), no_skmers+1, 3);
+    if constexpr (level == 3)
+        s3_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s.data()), no_skmers+1, 3);
+}
+
+
+template<int level>
+void RSHash::fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
+    std::vector<size_t> &skmer_positions, std::vector<uint8_t> &minimizer_occurences,
+    const size_t text_length, const size_t no_skmers)
+{
+    auto view = [&]() {
+    if constexpr (level == 1)
+        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m1, .window_size = k, .seed=seed1});
+    else if constexpr (level == 2)
+        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m2, .window_size = k, .seed=seed2});
+    else if constexpr (level == 3)
+        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m3, .window_size = k, .seed=seed3});
+    }();
+
+    auto & r = [&]() -> auto& {
+    if constexpr (level == 1) return r1;
+    else if constexpr (level == 2) return r2;
+    else if constexpr (level == 3) return r3;
+    }();
+
+    auto & s = [&]() -> auto& {
+    if constexpr (level == 1) return s1_select;
+    else if constexpr (level == 2) return s2_select;
+    else if constexpr (level == 3) return s3_select;
+    }();
+
+    const size_t offset_width = std::bit_width(text_length);
+    bits::compact_vector::builder builder;
+    builder.resize(no_skmers, offset_width);
+
+    std::fill(minimizer_occurences.begin(), minimizer_occurences.end(), 0);
+
+    size_t length = 32;
+    size_t skmer_idx = 0;
+    for(auto & sequence : sequences) {
+        for (auto && minimiser : sequence | view) {
+            if(uint64_t minimizer_rank = r.rank(minimiser.minimiser_value); r.rank(minimiser.minimiser_value+1)-minimizer_rank) {
+                size_t minimizer_idx = s.select(minimizer_rank);
+                if constexpr (level == 1)
+                    builder.set(minimizer_idx + minimizer_occurences[minimizer_rank], length + minimiser.range_position);
+                else
+                    builder.set(minimizer_idx + minimizer_occurences[minimizer_rank], skmer_positions[skmer_idx] + minimiser.range_position);
+                minimizer_occurences[minimizer_rank]++;
+            }
+        }
+        skmer_idx++;
+        length += sequence.size();
+    }
+
+    if constexpr (level == 1)
+        builder.build(offsets1);
+    else if constexpr (level == 2)
+        builder.build(offsets2);
+    else if constexpr (level == 3)
+        builder.build(offsets3);
+}
+
+
+template<int level>
+void RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences, std::vector<size_t> &positions,
+    std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &freq_skmers, std::vector<size_t> &skmer_positions)
+{
+    auto skmerview = [&]() {
+    if constexpr (level == 1)
+        return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m1, .window_size = k, .seed = seed1});
+    else if constexpr (level == 2)
+        return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m2, .window_size = k, .seed = seed2});
+    else if constexpr (level == 3)
+        return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m3, .window_size = k, .seed = seed3});
+    }();
+
+    auto & r = [&]() -> auto& {
+    if constexpr (level == 1) return r1;
+    else if constexpr (level == 2) return r2;
+    else if constexpr (level == 3) return r3;
+    }();
+    
+    size_t length = 32;
+    size_t skmer_idx = 0;
+    for(auto & sequence : sequences) {
+        size_t start_position = 0;
+        bool cur_freq, freq;
+
+        for(auto && minimiser : sequence | skmerview) {
+            freq = r.rank(minimiser.minimiser_value+1)-r.rank(minimiser.minimiser_value);
+            break;
+        }
+        for(auto && minimiser : sequence | skmerview) {
+            cur_freq = r.rank(minimiser.minimiser_value+1)-r.rank(minimiser.minimiser_value);
+            if(freq && !cur_freq)
+                start_position = minimiser.range_position;
+            if(!freq && cur_freq) {
+                seqan3::bitpacked_sequence<seqan3::dna4> skmer;
+                for(size_t i=start_position; i < minimiser.range_position-1+k; i++)
+                    skmer.push_back(sequence[i]);
+                freq_skmers.emplace_back(skmer);
+                if constexpr (level == 1)
+                    skmer_positions.emplace_back(length + start_position);
+                else
+                    skmer_positions.emplace_back(positions[skmer_idx] + start_position);
+            }
+            freq = cur_freq;
+        }
+        if(!cur_freq) {
+            seqan3::bitpacked_sequence<seqan3::dna4> skmer;
+            for(size_t i=start_position; i < sequence.size(); i++)
+                skmer.push_back(sequence[i]);
+            freq_skmers.emplace_back(skmer);
+            if constexpr (level == 1)
+                skmer_positions.emplace_back(length + start_position);
+            else
+                skmer_positions.emplace_back(positions[skmer_idx] + start_position);
+        }
+        length += sequence.size();
+        skmer_idx++;
+    }
+}
+
+
+
+void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& input)
+{
+    no_text_kmers = mark_sequences(input, k, endpoints);
+    size_t text_length = endpoints.size();
+
+    std::vector<uint64_t> minimizers1;
+    std::vector<uint8_t> minimizers1_occurences;
+    const uint64_t no_skmers1 = get_unfrequent_minimizers(input, m1, m_thres1, k, seed1, minimizers1, minimizers1_occurences);
+    const size_t no_minimizers1 = minimizers1.size();
+
+    std::cout << "build R_1...\n";
+    const uint64_t M1 = 1ULL << (m1+m1);
+    r1 = sux::bits::EliasFano(minimizers1, M1);
+    minimizers1.clear();
+
+    std::cout << "mark skmers1...\n";
+    mark_minimizer_occurences<1>(no_skmers1, minimizers1_occurences);
+
+    std::cout << "filling offsets_1...\n";
+    std::vector<size_t> skmer_positions;
+    fill_minimizer_offsets<1>(input, skmer_positions, minimizers1_occurences, text_length, no_skmers1);
+    minimizers1_occurences.clear();
+
+    std::cout << "get frequent skmers...\n";
+    std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers;
+    get_frequent_skmers<1>(input, skmer_positions, freq_skmers, skmer_positions);
+
+    if(level > 1)
+    {
+        std::cout << "count minimizers2...\n";
+        std::vector<uint64_t> minimizers2;
+        std::vector<uint8_t> minimizers2_occurences;
+        const uint64_t no_skmers2 = get_unfrequent_minimizers(freq_skmers, m2, m_thres2, k, seed2, minimizers2, minimizers2_occurences);
+        const size_t no_minimizers2 = minimizers2.size();
+
+        std::cout << "build R_2...\n";
+        std::sort(minimizers2.begin(), minimizers2.end());
+        const uint64_t M2 = 1ULL << (m2+m2);
+        r2 = sux::bits::EliasFano(minimizers2, M2);
+
+        std::cout << "mark skmers2...\n";
+        mark_minimizer_occurences<2>(no_skmers2, minimizers2_occurences);
+
+        std::cout << "filling offsets_2...\n";
+        fill_minimizer_offsets<2>(freq_skmers, skmer_positions, minimizers2_occurences, text_length, no_skmers2);
+        minimizers2_occurences.clear();
+        skmer_positions.clear();
+
+        std::cout << "get frequent skmers...\n";
+        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers_;
+        std::vector<size_t> skmer_positions_;
+        get_frequent_skmers<2>(freq_skmers, skmer_positions, freq_skmers_, skmer_positions_);
+        freq_skmers = freq_skmers_;
+        skmer_positions = skmer_positions_;
+    }
+
+    if(level > 2)
+    {
+        std::cout << "count minimizers3...\n";
+        std::vector<uint64_t> minimizers3;
+        std::vector<uint8_t> minimizers3_occurences;
+        const uint64_t no_skmers3 = get_unfrequent_minimizers(freq_skmers, m3, m_thres3, k, seed3, minimizers3, minimizers3_occurences);
+        const size_t no_minimizers3 = minimizers3.size();
+
+        std::cout << "build R_3...\n";
+        std::sort(minimizers3.begin(), minimizers3.end());
+        const uint64_t M3 = 1ULL << (m3+m3);
+        r3 = sux::bits::EliasFano(minimizers3, M3);
+
+        std::cout << "mark skmers3...\n";
+        mark_minimizer_occurences<3>(no_skmers3, minimizers3_occurences);
+
+        std::cout << "filling offsets_3...\n";
+        fill_minimizer_offsets<3>(freq_skmers, skmer_positions, minimizers3_occurences, text_length, no_skmers3);
+        minimizers3_occurences.clear();
+        skmer_positions.clear();
+
+        std::cout << "get frequent skmers...\n";
+        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers_;
+        std::vector<size_t> skmer_positions_;
+        get_frequent_skmers<3>(freq_skmers, skmer_positions, freq_skmers_, skmer_positions_);
+        freq_skmers = freq_skmers_;
+        skmer_positions = skmer_positions_;
+    }
+
+    std::cout << "build HT...\n";
+    for(auto & sequence : freq_skmers)
+        for(auto && kmer : sequence | rshash::views::kmerview({.window_size = k}))
+            hashmap.insert(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev));
+
+    std::cout << "copy text...\n";
+    text = pack_dna4_to_uint64(input);
+
+    print_info();
+}
+
+
+std::vector<uint64_t> RSHash::rand_text_kmers(const uint64_t n) {
+    std::uniform_int_distribution<uint32_t> distr;
+    std::mt19937 m_rand(1);
+    std::vector<std::uint64_t> kmers;
     kmers.reserve(n);
+    const uint64_t l = (text.size()-1)*32;
 
-    for (uint64_t i = 0; i < n; ++i) {
-        const uint64_t kmer = distr(m_rand) & mask;
-        kmers.push_back(kmer);
+    const uint64_t no_unitigs = number_unitigs();
+    for (uint64_t i = 0; i < n;) {
+        const uint64_t offset = distr(m_rand) % l;
+
+        const uint64_t r = endpoints.rank(offset+1);
+        const uint64_t next_endpoint = endpoints.select(r);
+
+        if(offset + 64 >= next_endpoint)
+            continue;
+
+        const uint64_t kmer = access(0, offset);
+
+        if ((i & 1) == 0)
+            kmers.push_back(crc(kmer, k));
+        else
+            kmers.push_back(kmer);
+
+        i++;
     }
 
     return kmers;
 }
 
+const inline uint64_t RSHash::get_word64(uint64_t pos) {
+    uint64_t block = pos >> 5;
+    uint64_t shift = (pos & 31) << 1;
+    uint64_t lo = text[block];
+    uint64_t hi = text[block + 1];
 
-struct cmd_arguments {
-    std::string cmd{};
-    std::filesystem::path i{};
-    std::filesystem::path q{};
-    std::filesystem::path d{};
-    uint8_t k{31};
-    uint8_t l{2};
-    uint8_t m1{18};
-    uint8_t m2{21};
-    uint8_t m3{23};
-    uint8_t t1{64};
-    uint8_t t2{64};
-    uint16_t t3{64};
-    bool loc{false};
-};
-
-void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
-    parser.add_positional_option(args.cmd, sharg::config{.description = "command options: build, lookup, locate, bench"});
-    parser.add_option(args.i, sharg::config{.short_id = 'i', .long_id = "input", .description = "provide input file"});
-    parser.add_option(args.q, sharg::config{.short_id = 'q', .long_id = "query", .description = "provide query file"});
-    parser.add_option(args.d, sharg::config{.short_id = 'd', .long_id = "dict", .description = "provide dict file"});
-    parser.add_option(args.k, sharg::config{.short_id = 'k', .long_id = "k-mer", .description = "k-mer length"});
-    parser.add_option(args.l, sharg::config{.short_id = 'l', .long_id = "level", .description = "no level"});
-    parser.add_option(args.m1, sharg::config{.long_id = "m1", .description = "minimiser1 length"});
-    parser.add_option(args.m2, sharg::config{.long_id = "m2", .description = "minimiser2 length"});
-    parser.add_option(args.m3, sharg::config{.long_id = "m3", .description = "minimiser3 length"});
-    parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
-    parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
-    parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
-    parser.add_flag(args.loc, sharg::config{.long_id = "locate", .description = "enable locate function"});
+    uint64_t shift_mask = -(shift != 0);
+    return (lo >> shift) | ((hi << (64 - shift)) & shift_mask);
 }
 
-int check_arguments(sharg::parser &parser, cmd_arguments &args) {
-    if(!parser.is_option_set('d'))
-        throw sharg::user_input_error("provide index file.");
-    if(args.cmd == "build") {
-        if(!parser.is_option_set('i'))
-            throw sharg::user_input_error("provide input file.");
-        if(!parser.is_option_set('k'))
-            throw sharg::user_input_error("specify k");
-        if(!parser.is_option_set('l'))
-            throw sharg::user_input_error("specify level");
-    }
-    else if(args.cmd == "lookup") {
-        if(!parser.is_option_set('q'))
-            throw sharg::user_input_error("provide query file.");
-    }
-    else if(args.cmd == "locate") {
-        if(!parser.is_option_set('q'))
-            throw sharg::user_input_error("provide query file.");
-    }
-    else if(args.cmd != "bench")
-        throw sharg::user_input_error("illegal command");
-    return 0;
+const inline uint64_t RSHash::get_base(uint64_t pos) {
+    return (text[pos >> 5] >> ((pos & 31) << 1)) & 3ULL;
 }
 
-struct my_traits:seqan3::sequence_file_input_default_traits_dna {
-    using sequence_alphabet = seqan3::dna4;
-};
+
+uint64_t RSHash::access(const uint64_t unitig_id, const size_t offset) {
+    return get_word64(offset) & kmermask;
+}
 
 
-void load_file(const std::filesystem::path &filepath,
-               std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &output)
+// todo: level 3
+uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers, bool verbose)
 {
-    auto stream = seqan3::sequence_file_input<my_traits>{filepath};
-    for (auto & record : stream) {
-        seqan3::bitpacked_sequence<seqan3::dna4> seq;
-        seq.assign(record.sequence().begin(), record.sequence().end());
-        output.push_back(std::move(seq));
-    }
-}
+    uint64_t occurences = 0;
 
-int main(int argc, char** argv)
-{
-    sharg::parser parser{"rsindex", argc, argv};
-    cmd_arguments args{};
-    initialise_argument_parser(parser, args);
-    try {
-        parser.parse();
-        check_arguments(parser, args);
-    }
-    catch (sharg::parser_error const &ext) {
-        return -1;
-    }
+    uint64_t* offsets = new uint64_t[m_thres2];
+    
+    uint64_t minimiser, minimiser_rank;
+    size_t left_minimiser_position, right_minimiser_position;
 
-    if(args.cmd == "build")
-    {
-        std::cout << "loading text...\n";
-        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> text;
-        load_file(args.i, text);
+    for(uint64_t kmer : kmers) {
+        const uint64_t kmer_rc = crc(kmer, k);
+        minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
 
-        std::cout << "building dict...\n";
-        RSHash index = RSHash(args.k, args.l, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3);
-        index.build(text);
-        index.save(args.d);
-    }
-    else if(args.cmd == "lookup")
-    {
-        std::cout << "loading queries...\n";
-        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> queries;
-        load_file(args.q, queries);
+        if(minimiser_rank = r1.rank(minimiser); r1.rank(minimiser + 1) - minimiser_rank) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
 
-        uint64_t kmers = 0;
-        uint64_t found = 0;
-        uint64_t extensions = 0;
-        std::chrono::nanoseconds elapsed;
-        RSHash index = RSHash();
-        index.load(args.d);
-        std::cout << "querying...\n";
-
-        std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
-        for (auto query : queries) {
-            found += index.streaming_lookup(query, extensions);
-            kmers += query.size() - index.getk() + 1;
+            occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
-        std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
-        elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
-        
-        double ns_per_kmer = (double) elapsed.count() / kmers;
-        
-        std::cout << "==== query report:\n";
-        std::cout << "num_kmers = " << kmers << '\n';
-        std::cout << "num_positive_kmers = " << found << " (" << (double) found/kmers*100 << "%)\n";
-        std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
-        std::cout << "extensions = " << extensions << '\n';
-    }
-    else if(args.cmd == "locate")
-    {
-        std::cout << "loading queries...\n";
-        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> queries;
-        load_file(args.q, queries);
+        else {
+            minimiser = find_minimiser<2>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+            if(minimiser_rank = r2.rank(minimiser); r2.rank(minimiser + 1) - minimiser_rank) {
+                size_t p = s2_select.select(minimiser_rank);
+                size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
 
-        std::chrono::nanoseconds elapsed;
-        size_t kmers = 0;
-
-        if(args.l == 1) {
-            std::cout << "loading dict...\n";
-            RSHash1 index = RSHash1();
-            index.load(args.d);
-            std::cout << "locating...\n";
-
-            std::vector<std::pair<uint64_t, bool>> positions;
-
-            std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
-            uint64_t q = 0;
-            for (auto query : queries) {
-                // std::cout << q++ << ": ";
-                index.streaming_locate(query, positions);
-                kmers += query.size() - index.getk() + 1;
+                occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
             }
-            std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
-            elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
-
-            for (const auto& pos : positions) {
-                std::cout << "(" << pos.first << "," << pos.second << ")";
+            else
+                occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
         }
-        }
-        
-        double ns_per_kmer = (double) elapsed.count() / kmers;
-        
-        std::cout << "==== query report:\n";
-        std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
     }
-    else if(args.cmd == "bench")
+
+    delete[] offsets;
+
+    return occurences;
+}
+
+
+template<int level>
+inline bool RSHash::check(const uint64_t kmer, const uint64_t kmer_rc,
+    uint64_t* offsets, const size_t p, const size_t no_skmers,
+    const size_t left_minimiser_position, const size_t right_minimiser_position)
+{
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    for(size_t i = 0; i < no_skmers; i++) {
+        if constexpr (level == 1)
+            offsets[i] = offsets1.access(p+i)-span+1;
+        if constexpr (level == 2)
+            offsets[i] = offsets2.access(p+i)-span+1;
+        if constexpr (level == 3)
+            offsets[i] = offsets3.access(p+i)-span+1;
+    }
+
+    for(size_t i = 0; i < no_skmers; i++) {
+        const uint64_t o = offsets[i];
+
+        uint64_t hash_rc = get_word64(o + left_minimiser_position) & kmermask;
+        uint64_t hash_fwd = get_word64(o + span-1-left_minimiser_position) & kmermask;
+
+        if(kmer == hash_fwd || kmer_rc == hash_rc)
+            return true;
+
+        if(left_minimiser_position != k-m1-right_minimiser_position) {
+            hash_fwd = get_word64(o + right_minimiser_position) & kmermask;
+            hash_rc = get_word64(o + span-1-right_minimiser_position) & kmermask;
+
+            if(kmer == hash_fwd || kmer_rc == hash_rc)
+                return true;
+        }
+
+    }
+
+    return false;
+}
+
+
+inline bool RSHash::extend_in_text(uint64_t &text_pos, uint64_t start, uint64_t end,
+    bool forward, const uint64_t query, const uint64_t query_rc)
+{
+    if(forward) {
+        if(++text_pos < end) {
+            uint64_t const new_rank = get_base(text_pos);
+            bool const found = (new_rank == (query >> (2*(k-1))));
+            return found;
+        }
+    }
+    else {
+        if(--text_pos >= start) {
+            uint64_t const new_rank = get_base(text_pos);
+            bool const found = (new_rank == (query_rc & 0b11));
+            return found;
+        }
+    }
+    return false;
+}
+
+
+template<int level>
+inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, size_t N, const uint64_t shift)
+{
+    uint64_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    for(size_t i = 0; i < N; i++) {
+        if constexpr (level == 1)
+            offsets[i] = offsets1.access(p+i) + 1 - span;
+        if constexpr (level == 2)
+            offsets[i] = offsets2.access(p+i) + 1 - span;
+        if constexpr (level == 3)
+            offsets[i] = offsets3.access(p+i) + 1 - span;
+    }
+
+    for(uint64_t i = 0; i < N; i++) {
+        const uint64_t s = offsets[i];
+
+        uint64_t kmer = get_word64(s) & kmermask;
+        uint64_t bits = get_word64(s + k);
+        *buffer++ = kmer;
+        for(uint64_t j=0; j < span-1; j++) {
+            uint64_t const next_base = bits & 3ULL;
+            bits >>= 2;
+            kmer = (kmer >> 2) | (next_base << shift);
+            *buffer++ = kmer;
+        }
+
+    }
+}
+
+
+template<int level>
+inline bool RSHash::check_overlap(uint64_t skmer_pos, uint64_t text_pos, uint64_t &start_pos, uint64_t &end_pos)
+{
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    const uint64_t r = endpoints.rank(skmer_pos+span);
+    start_pos = endpoints.select(r-1, &end_pos);
+
+    return text_pos >= start_pos && text_pos+k-1 < end_pos;
+}
+
+
+template<int level>
+inline bool RSHash::check_minimiser_pos(uint64_t *buffer, const uint64_t offset,
+    const uint64_t query, const uint64_t queryrc,
+    const size_t s, const size_t e, const size_t minimiser_pos,
+    bool &forward, uint64_t &text_pos, uint64_t &start_pos, uint64_t &end_pos)
+{
+    if(buffer[s+minimiser_pos] == queryrc) {
+        forward = false;
+        text_pos = offset + minimiser_pos;
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
+            return true;
+    }
+    if(buffer[e-1-minimiser_pos] == query) {
+        forward = true;
+        text_pos = offset + e-1-s-minimiser_pos + k - 1;
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
+            return true;
+    }
+
+    return false;
+}
+
+
+template<int level>
+inline bool RSHash::check_minimiser_pos2(uint64_t *buffer, const uint64_t offset,
+    const uint64_t query, const uint64_t queryrc,
+    const size_t s, const size_t e, const size_t left_minimiser_pos, const size_t right_minimiser_pos,
+    bool &forward, uint64_t &text_pos, uint64_t &start_pos, uint64_t &end_pos)
+{
+    if(buffer[s+left_minimiser_pos] == queryrc) {
+        forward = false;
+        text_pos = offset + left_minimiser_pos;
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
+            return true;
+    }
+    if(buffer[e-1-left_minimiser_pos] == query) {
+        forward = true;
+        text_pos = offset + e-1-s-left_minimiser_pos + k - 1;
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
+            return true;
+    }
+    if(buffer[s+right_minimiser_pos] == query) {
+        forward = true;
+        text_pos = offset + right_minimiser_pos + k - 1;
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
+            return true;
+    }
+    if(buffer[e-1-right_minimiser_pos] == queryrc) {
+        forward = false;
+        text_pos = offset + e-1-s-right_minimiser_pos;
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
+            return true;
+    }
+
+    return false;
+}
+
+
+template<int level>
+inline bool RSHash::lookup_buffer(uint64_t* buffer, uint64_t *offsets, const size_t no_skmers,
+    const uint64_t query, const uint64_t queryrc,
+    uint64_t &text_pos, const size_t left_minimiser_pos, const size_t right_minimiser_pos,
+    bool &forward, uint64_t &start_pos, uint64_t &end_pos)
+{
+    size_t span, m;
+    if constexpr (level == 1) {
+        span = span1;
+        m = m1;
+    }
+    if constexpr (level == 2) {
+        span = span2;
+        m = m2;
+    }
+    if constexpr (level == 3) {
+        span = span3;
+        m = m3;
+    }
+
+    size_t s = 0, e = 0;
+    if(left_minimiser_pos != k-m-right_minimiser_pos) {
+        for(size_t i = 0; i < no_skmers; i++) {
+            e += span;
+            if(check_minimiser_pos2<level>(buffer, offsets[i], query, queryrc, s, e, left_minimiser_pos, right_minimiser_pos, forward, text_pos, start_pos, end_pos))
+                return true;
+            s = e;
+        }
+    }
+    else {
+        for(size_t i = 0; i < no_skmers; i++) {
+            e += span;
+            if(check_minimiser_pos<level>(buffer, offsets[i], query, queryrc, s, e, left_minimiser_pos, forward, text_pos, start_pos, end_pos))
+                return true;
+            s = e;
+        }
+    }
+    
+    return false;
+}
+
+
+template<int level>
+inline uint64_t RSHash::find_minimiser(const uint64_t kmer, const uint64_t kmer_rc, size_t &left_minimiser_position, size_t &right_minimiser_position)
+{
+    uint64_t m, mmermask;
+    mixer_64 m_hasher;
+    if constexpr (level == 1) {
+        m = m1;
+        mmermask = mmermask1;
+        m_hasher = m_hasher1;
+    }
+    if constexpr (level == 2) {
+        m = m2;
+        mmermask = mmermask2;
+        m_hasher = m_hasher2;
+    }
+    if constexpr (level == 3) {
+        m = m3;
+        mmermask = mmermask3;
+        m_hasher = m_hasher3;
+    }
+
+    uint64_t mmer = kmer >> 2*(k - m);
+    uint64_t mmer_rc = kmer_rc & mmermask;
+    uint64_t minimiser = std::min<uint64_t>(m_hasher.hash(mmer) & mmermask, m_hasher.hash(mmer_rc) & mmermask);
+    left_minimiser_position = k-m;
+    right_minimiser_position = 0;
+
+    for (size_t i = 1; i <= k-m; ++i) {
+        mmer = (kmer >> 2*(k-m-i)) & mmermask;
+        mmer_rc = (kmer_rc >> 2*i) & mmermask;
+        const uint64_t mmerhash = std::min<uint64_t>(m_hasher.hash(mmer) & mmermask, m_hasher.hash(mmer_rc) & mmermask);
+        if(mmerhash < minimiser) {
+            minimiser = mmerhash;
+            left_minimiser_position = k-m-i;
+            right_minimiser_position = i;
+        }
+        else if(mmerhash == minimiser)
+            left_minimiser_position = k-m-i;
+    }
+
+    return minimiser;
+}
+
+template<int level>
+inline void RSHash::update_minimiser(const uint64_t kmer, const uint64_t kmer_rc, uint64_t &minimiser, size_t &left_minimiser_position, size_t &right_minimiser_position)
+{
+    uint64_t m, mmermask;
+    mixer_64 m_hasher;
+    if constexpr (level == 1) {
+        m = m1;
+        mmermask = mmermask1;
+        m_hasher = m_hasher1;
+    }
+    if constexpr (level == 2) {
+        m = m2;
+        mmermask = mmermask2;
+        m_hasher = m_hasher2;
+    }
+    if constexpr (level == 3) {
+        m = m3;
+        mmermask = mmermask3;
+        m_hasher = m_hasher3;
+    }
+
+    if(left_minimiser_position-- == 0) {
+        minimiser = find_minimiser<level>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+        return;
+    }
+
+    const uint64_t mmer = kmer >> 2*(k - m);
+    const uint64_t mmer_rc = kmer_rc & mmermask;
+    const uint64_t mmerhash = std::min<uint64_t>(m_hasher.hash(mmer) & mmermask, m_hasher.hash(mmer_rc) & mmermask);
+
+    if(mmerhash < minimiser) {
+        minimiser = mmerhash;
+        left_minimiser_position = k - m;
+        right_minimiser_position = 0;
+        return;
+    }
+    if(mmerhash == minimiser) {
+        right_minimiser_position = 0;
+        return;
+    }
+
+    right_minimiser_position++;
+}
+
+
+uint64_t RSHash::streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
+{
+    if(level == 1)
+        return streaming_lookup1(query, extensions);
+    else if(level == 2)
+        return streaming_lookup2(query, extensions);
+    else if(level == 3)
+        return streaming_lookup3(query, extensions);
+    else
+        return 0;
+}
+
+
+uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
+{
+    const uint64_t shift = 2*(k-1);
+    constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
+    uint64_t current_minimiser1=INF;
+    uint64_t current_neg_minimiser1=INF;
+    uint64_t* offsets1 = new uint64_t[m_thres1];
+    uint64_t* buffer1 = new uint64_t[m_thres1 * span1];
+    size_t no_skmers1;
+    uint64_t unitig_begin, unitig_end;
+    uint64_t text_pos;
+    bool forward;
+    bool found = false;
+    bool rolling = false;
+    size_t left_minimiser1_position, right_minimiser1_position;
+    uint64_t minimiser1, minimiser1_rank;
+
+    uint64_t occurences = 0;
+    for(auto && window : query | rshash::views::kmerview({.window_size = k}))
     {
-        std::cout << "loading dict...\n";
-        uint64_t found = 0;
-        double ns_per_kmer;
-        const int rounds = 5;
-        const bool verbose = false;
-
-        RSHash index = RSHash();
-        index.load(args.d);
-
-        std::cout << "bench pos lookup...\n";
-        double error = 0.0;
-        double lookup_time_sum = 0.0;
-        int round = 0;
-        std::chrono::high_resolution_clock::time_point t_start, t_stop;
-        std::chrono::nanoseconds elapsed;
-
-        while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
-            kmers = index.rand_text_kmers(1000000);
-            t_start = std::chrono::high_resolution_clock::now();
-            found = index.lookup(kmers, verbose);
-            t_stop = std::chrono::high_resolution_clock::now();
-            elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
-            ns_per_kmer = (double) elapsed.count() / kmers.size();
-            lookup_time_sum += ns_per_kmer;
-            round++;
-            error += std::abs((lookup_time_sum/round) - ns_per_kmer);
-            std::cout << "round " << round << " found " << found << " time per kmer: " << ns_per_kmer << ", avg: " << (lookup_time_sum/round) << ", error: " << error/round << '\n';
+        if(found && extend_in_text(text_pos, unitig_begin, unitig_end, forward, window.kmer_value, window.kmer_value_rev)) {
+            occurences++;
+            extensions++;
+            rolling = false;
         }
+        else {
+            if(rolling)
+                update_minimiser<1>(window.kmer_value, window.kmer_value_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            else {
+                minimiser1 = find_minimiser<1>(window.kmer_value, window.kmer_value_rev, left_minimiser1_position, right_minimiser1_position);
+                rolling = true;
+            }
 
-        std::cout << "==== positive lookup:\n";
-        std::cout << "num_kmers = " << kmers.size() << '\n';
-        std::cout << "num_positive_kmers = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
-        std::cout << "pos_time_per_kmer = " << lookup_time_sum/round << '\n';
+            if(minimiser1 == current_minimiser1) {
+                found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
+                occurences += found;
+            }
+            else if(minimiser1 != current_neg_minimiser1 && (minimiser1_rank = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser1_rank)) {
+                const size_t p = s1_select.select(minimiser1_rank);
+                no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
 
-        std::cout << "bench neg lookup...\n";
-
-        round = 0;
-        error = 0.0;
-        lookup_time_sum = 0.0;
-
-        while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
-            kmers = rand_kmers(1000000, index.getk());
-            t_start = std::chrono::high_resolution_clock::now();
-            found = index.lookup(kmers, verbose);
-            t_stop = std::chrono::high_resolution_clock::now();
-            elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
-            ns_per_kmer = (double) elapsed.count() / kmers.size();
-            lookup_time_sum += ns_per_kmer;
-            round++;
-            error += std::abs((lookup_time_sum/round) - ns_per_kmer);
-            std::cout << "round " << round << " time per kmer: " << ns_per_kmer << ", avg: " << (lookup_time_sum/round) << ", error: " << error/round << '\n';
+                fill_buffer<1>(offsets1, buffer1, p, no_skmers1, shift);
+                found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
+                occurences += found;
+                current_minimiser1 = minimiser1;
+            }    
+            else {
+                occurences += hashmap.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+                found = false;
+                current_neg_minimiser1 = minimiser1;
+            }
         }
-
-        std::cout << "==== negative lookup:\n";
-        std::cout << "num_kmers = " << kmers.size() << '\n';
-        std::cout << "num_negative_kmers = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
-        std::cout << "neg_time_per_kmer = " << ns_per_kmer << '\n';
     }
- 
+
+    delete[] offsets1;
+    delete[] buffer1;
+    
+    return occurences;
+}
+
+
+uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
+{
+    auto view = rshash::views::kmerview({.window_size = k});
+
+    const uint64_t shift = 2*(k-1);
+    constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
+    uint64_t current_minimiser1=INF, current_minimiser2=INF;
+    uint64_t current_neg_minimiser1=INF, current_neg_minimiser2=INF;
+    uint64_t* offsets1 = new uint64_t[m_thres1];
+    uint64_t* offsets2 = new uint64_t[m_thres2];
+    uint64_t* buffer1 = new uint64_t[m_thres1 * span1];
+    uint64_t* buffer2 = new uint64_t[m_thres2 * span2];
+    size_t no_skmers1, no_skmers2, no_skmers3;
+    uint64_t unitig_begin, unitig_end;
+    uint64_t text_pos;
+    bool forward;
+    bool found = false;
+    bool rolling1 = false;
+    bool rolling2 = false;
+    size_t left_minimiser1_position, right_minimiser1_position;
+    uint64_t minimiser1, minimiser1_rank;
+    size_t left_minimiser2_position, right_minimiser2_position;
+    uint64_t minimiser2, minimiser2_rank;
+    uint64_t occurences = 0;
+
+    for(auto && window : query | view)
+    {
+        if(found && extend_in_text(text_pos, unitig_begin, unitig_end, forward, window.kmer_value, window.kmer_value_rev)) {
+            occurences++;
+            extensions++;
+            rolling1 = false;
+            rolling2 = false;
+        }
+        else {
+            if(rolling1)
+                update_minimiser<1>(window.kmer_value, window.kmer_value_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            else {
+                minimiser1 = find_minimiser<1>(window.kmer_value, window.kmer_value_rev, left_minimiser1_position, right_minimiser1_position);
+                rolling1 = true;
+            }
+
+            if(minimiser1 == current_minimiser1) {
+                found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
+                occurences += found;
+                rolling2 = false;
+            }
+            else if(minimiser1 != current_neg_minimiser1 && (minimiser1_rank = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser1_rank)) {
+                const size_t p = s1_select.select(minimiser1_rank);
+                no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
+
+                fill_buffer<1>(offsets1, buffer1, p, no_skmers1, shift);
+                found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
+                occurences += found;
+                current_minimiser1 = minimiser1;
+                rolling2 = false;
+            }
+            else {
+                if(rolling2)
+                    update_minimiser<2>(window.kmer_value, window.kmer_value_rev, minimiser2, left_minimiser2_position, right_minimiser2_position);
+                else {
+                    minimiser2 = find_minimiser<2>(window.kmer_value, window.kmer_value_rev, left_minimiser2_position, right_minimiser2_position);
+                    rolling2 = true;
+                }
+
+                if(minimiser2 == current_minimiser2) {
+                    found = lookup_buffer<2>(buffer2, offsets2, no_skmers2, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end);
+                    occurences += found;
+                }
+                else if(minimiser2 != current_neg_minimiser2 && (minimiser2_rank = r2.rank(minimiser2), r2.rank(minimiser2 + 1) - minimiser2_rank)) {
+                    const size_t p = s2_select.select(minimiser2_rank);
+                    no_skmers2 = s2_select.select(minimiser2_rank+1) - p;
+
+                    fill_buffer<2>(offsets2, buffer2, p, no_skmers2, shift);
+                    found = lookup_buffer<2>(buffer2, offsets2, no_skmers2, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end);
+                    occurences += found;
+                    current_minimiser2 = minimiser2;
+                    current_neg_minimiser1 = minimiser1;
+                }   
+                else {
+                    occurences += hashmap.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+                    found = false;
+                    current_neg_minimiser1 = minimiser1;
+                    current_neg_minimiser2 = minimiser2;
+                }
+            }
+        }
+    }
+
+    delete[] offsets1;
+    delete[] offsets2;
+    delete[] buffer1;
+    delete[] buffer2;
+    
+    return occurences;
+}
+
+
+uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
+{
+    auto view = rshash::views::kmerview({.window_size = k});
+
+    const uint64_t shift = 2*(k-1);
+    constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
+    uint64_t current_minimiser1=INF, current_minimiser2=INF, current_minimiser3=INF;
+    uint64_t current_neg_minimiser1=INF, current_neg_minimiser2=INF, current_neg_minimiser3=INF;
+    uint64_t* offsets1 = new uint64_t[m_thres1];
+    uint64_t* offsets2 = new uint64_t[m_thres2];
+    uint64_t* offsets3 = new uint64_t[m_thres3];
+    uint64_t* buffer1 = new uint64_t[m_thres1 * span1];
+    uint64_t* buffer2 = new uint64_t[m_thres2 * span2];
+    uint64_t* buffer3 = new uint64_t[m_thres3 * span3];
+    size_t no_skmers1, no_skmers2, no_skmers3;
+    uint64_t unitig_begin, unitig_end;
+    uint64_t text_pos;
+    bool forward;
+    bool found = false;
+    bool rolling1 = false;
+    bool rolling2 = false;
+    bool rolling3 = false;
+    size_t left_minimiser1_position, right_minimiser1_position;
+    uint64_t minimiser1, minimiser1_rank;
+    size_t left_minimiser2_position, right_minimiser2_position;
+    uint64_t minimiser2, minimiser2_rank;
+    size_t left_minimiser3_position, right_minimiser3_position;
+    uint64_t minimiser3, minimiser3_rank;
+    uint64_t occurences = 0;
+
+    for(auto && window : query | view)
+    {
+        if(found && extend_in_text(text_pos, unitig_begin, unitig_end, forward, window.kmer_value, window.kmer_value_rev)) {
+            occurences++;
+            extensions++;
+            rolling1 = false;
+            rolling2 = false;
+            rolling3 = false;
+        }
+        else {
+            if(rolling1)
+                update_minimiser<1>(window.kmer_value, window.kmer_value_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            else {
+                minimiser1 = find_minimiser<1>(window.kmer_value, window.kmer_value_rev, left_minimiser1_position, right_minimiser1_position);
+                rolling1 = true;
+            }
+
+            if(minimiser1 == current_minimiser1) {
+                found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
+                occurences += found;
+                rolling2 = false;
+                rolling3 = false;
+            }
+            else if(minimiser1 != current_neg_minimiser1 && (minimiser1_rank = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser1_rank)) {
+                const size_t p = s1_select.select(minimiser1_rank);
+                no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
+
+                fill_buffer<1>(offsets1, buffer1, p, no_skmers1, shift);
+                found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
+                occurences += found;
+                current_minimiser1 = minimiser1;
+                rolling2 = false;
+                rolling3 = false;
+            }
+            else {
+                if(rolling2)
+                    update_minimiser<2>(window.kmer_value, window.kmer_value_rev, minimiser2, left_minimiser2_position, right_minimiser2_position);
+                else {
+                    minimiser2 = find_minimiser<2>(window.kmer_value, window.kmer_value_rev, left_minimiser2_position, right_minimiser2_position);
+                    rolling2 = true;
+                }
+
+                if(minimiser2 == current_minimiser2) {
+                    found = lookup_buffer<2>(buffer2, offsets2, no_skmers2, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end);
+                    occurences += found;
+                    rolling3 = false;
+                }
+                else if(minimiser2 != current_neg_minimiser2 && (minimiser2_rank = r2.rank(minimiser2), r2.rank(minimiser2 + 1) - minimiser2_rank)) {
+                    const size_t p = s2_select.select(minimiser2_rank);
+                    no_skmers2 = s2_select.select(minimiser2_rank+1) - p;
+
+                    fill_buffer<2>(offsets2, buffer2, p, no_skmers2, shift);
+                    found = lookup_buffer<2>(buffer2, offsets2, no_skmers2, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end);
+                    occurences += found;
+                    current_minimiser2 = minimiser2;
+                    current_neg_minimiser1 = minimiser1;
+                    rolling3 = false;
+                }
+                else {
+                    if(rolling3)
+                        update_minimiser<3>(window.kmer_value, window.kmer_value_rev, minimiser3, left_minimiser3_position, right_minimiser3_position);
+                    else {
+                        minimiser3 = find_minimiser<3>(window.kmer_value, window.kmer_value_rev, left_minimiser3_position, right_minimiser3_position);
+                        rolling3 = true;
+                    }
+
+                    if(minimiser3 == current_minimiser3) {
+                        found = lookup_buffer<3>(buffer3, offsets3, no_skmers3, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser3_position, right_minimiser3_position, forward, unitig_begin, unitig_end);
+                        occurences += found;
+                    }
+                    else if(minimiser3 != current_neg_minimiser3 && (minimiser3_rank = r3.rank(minimiser3), r3.rank(minimiser3 + 1) - minimiser3_rank)) {
+                        const size_t p = s3_select.select(minimiser3_rank);
+                        no_skmers3 = s3_select.select(minimiser3_rank+1) - p;
+
+                        fill_buffer<3>(offsets3, buffer3, p, no_skmers3, shift);
+                        found = lookup_buffer<3>(buffer3, offsets3, no_skmers3, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser3_position, right_minimiser3_position, forward, unitig_begin, unitig_end);
+                        occurences += found;
+                        current_minimiser3 = minimiser3;
+                        current_neg_minimiser1 = minimiser1;
+                        current_neg_minimiser2 = minimiser2;
+                    }
+                    else {
+                        occurences += hashmap.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+                        found = false;
+                        current_neg_minimiser1 = minimiser1;
+                        current_neg_minimiser2 = minimiser2;
+                        current_neg_minimiser3 = minimiser3;
+                    }
+                }
+            }
+        }
+    }
+
+    delete[] offsets1;
+    delete[] offsets2;
+    delete[] offsets3;
+    delete[] buffer1;
+    delete[] buffer2;
+    delete[] buffer3;
+    
+    return occurences;
+}
+
+template<int level>
+inline void RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset,
+    const uint64_t kmer, const uint64_t kmerrc, const size_t s,
+    const size_t minimiser_pos, uint64_t &start_pos, uint64_t &end_pos,
+    std::vector<std::pair<uint64_t, bool>> &positions)
+{
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    else if constexpr (level == 2)
+        span = span2;
+    else if constexpr (level == 3)
+        span = span3;
+
+    if(buffer[s+minimiser_pos] == kmerrc) {
+        const uint64_t text_pos = offset + minimiser_pos;
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
+            // std:: cout << '(' << text_pos << ',' << 1 <<  ')';
+            positions.emplace_back(text_pos, true);
+    }
+    if(buffer[s+span-1-minimiser_pos] == kmer) {
+        const uint64_t text_pos = offset + span-1-minimiser_pos + k - 1;
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
+            // std:: cout << '(' << text_pos << ',' << 0 <<  ')';
+            positions.emplace_back(text_pos, false);
+    }
+}
+
+template<int level>
+inline void RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offset,
+    const uint64_t kmer, const uint64_t kmerrc, const size_t s,
+    const size_t left_minimiser_pos, const size_t right_minimiser_pos,
+    uint64_t &start_pos, uint64_t &end_pos,
+    std::vector<std::pair<uint64_t, bool>> &positions)
+{
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    else if constexpr (level == 2)
+        span = span2;
+    else if constexpr (level == 3)
+        span = span3;
+    
+    if(buffer[s+left_minimiser_pos] == kmerrc) {
+        const uint64_t text_pos = offset + left_minimiser_pos;
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
+            // std:: cout << '(' << text_pos << ',' << 1 <<  ')';
+            positions.emplace_back(text_pos, true);
+    }
+    if(buffer[s+span-1-left_minimiser_pos] == kmer) {
+        const uint64_t text_pos = offset + span-1-left_minimiser_pos + k - 1;
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
+            // std:: cout << '(' << text_pos << ',' << 0 <<  ')';
+            positions.emplace_back(text_pos, false);
+    }
+    if(buffer[s+right_minimiser_pos] == kmer) {
+        const uint64_t text_pos = offset + right_minimiser_pos + k - 1;
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
+            // std:: cout << '(' << text_pos << ',' << 1 <<  ')';
+            positions.emplace_back(text_pos, true);
+    }
+    if(buffer[s+span-1-right_minimiser_pos] == kmerrc) {
+        const uint64_t text_pos = offset + span-1-right_minimiser_pos;
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
+            // std:: cout << '(' << text_pos << ',' << 0 <<  ')';
+            positions.emplace_back(text_pos, false);
+    }
+}
+
+template<int level>
+inline void RSHash::locate_buffer(uint64_t *buffer, uint64_t *offsets, const size_t no_minimiser,
+    const uint64_t query, const uint64_t queryrc,
+    const size_t left_minimiser_pos, const size_t right_minimiser_pos,
+    uint64_t &start_pos, uint64_t &end_pos, std::vector<std::pair<uint64_t, bool>> &positions)
+{
+    size_t span, m;
+    if constexpr (level == 1) {
+        span = span1;
+        m = m1;
+    }
+    if constexpr (level == 2) {
+        span = span2;
+        m = m2;
+    }
+    if constexpr (level == 3) {
+        span = span3;
+        m = m3;
+    }
+
+    size_t s = 0;
+    if(left_minimiser_pos != k-m-right_minimiser_pos) {
+        for(size_t i = 0; i < no_minimiser; i++) {
+            report_minimiser_pos2<level>(buffer, offsets[i], query, queryrc, s, left_minimiser_pos, right_minimiser_pos, start_pos, end_pos, positions);
+            s += span;
+        }
+    }
+    else {
+        for(size_t i = 0; i < no_minimiser; i++) {
+            report_minimiser_pos<level>(buffer, offsets[i], query, queryrc, s, left_minimiser_pos, start_pos, end_pos, positions);
+            s += span;
+        }
+    }
+}
+
+
+void RSHash::streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
+    std::vector<std::pair<uint64_t, bool>> &positions)
+{
+    uint64_t occurences = 0;
+    uint64_t current_pos_minimiser=std::numeric_limits<uint64_t>::max();
+    uint64_t current_neg_minimiser=std::numeric_limits<uint64_t>::max();
+    const uint64_t shift = 2*(k-1);
+    uint64_t* offsets = new uint64_t[m_thres1];
+    uint64_t* kmer_buffer = new uint64_t[(m_thres1) * span1];
+    size_t no_minimiser;
+    uint64_t sequence_begin, sequence_end;
+    uint64_t minimiser, minimiser_rank;
+    size_t left_minimiser_position, right_minimiser_position;
+    bool begin = true; 
+
+    for(auto && kmer : query | rshash::views::kmerview({.window_size = k}))
+    {
+        if(begin) {
+            minimiser = find_minimiser<1>(kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position, right_minimiser_position);
+            begin = false;
+        }
+        else
+            update_minimiser<1>(kmer.kmer_value, kmer.kmer_value_rev, minimiser, left_minimiser_position, right_minimiser_position);
+
+        if(minimiser == current_pos_minimiser) {
+            locate_buffer<1>(kmer_buffer, offsets, no_minimiser, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position, right_minimiser_position, sequence_begin, sequence_end, positions);
+        }
+        else if(minimiser != current_neg_minimiser && (minimiser_rank = r1.rank(minimiser), r1.rank(minimiser + 1) - minimiser_rank)) {
+            const size_t minimiser_position = s1_select.select(minimiser_rank);
+            no_minimiser = s1_select.select(minimiser_rank+1) - minimiser_position;
+
+            fill_buffer<1>(offsets, kmer_buffer, minimiser_position, no_minimiser, shift);
+            locate_buffer<1>(kmer_buffer, offsets, no_minimiser, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position, right_minimiser_position, sequence_begin, sequence_end, positions);
+            current_pos_minimiser = minimiser;
+        }
+        else {
+            current_neg_minimiser = minimiser;
+            // if(hashmap.contains(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev)))
+        }
+
+    }
+
+    delete[] kmer_buffer;
+    delete[] offsets;
+
+}
+
+
+
+
+int RSHash::save(const std::filesystem::path &filepath) {
+    std::ofstream out(filepath, std::ios::binary);
+    cereal::BinaryOutputArchive archive(out);
+
+    archive(k, level, m1, m2, m3, m_thres1, m_thres2, m_thres3, s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, hashmap);
+
+    out.close();
     return 0;
 }
 
+int RSHash::load(const std::filesystem::path &filepath) {
+    std::ifstream in(filepath, std::ios::binary);
+    cereal::BinaryInputArchive archive(in);
+
+    archive(k, level, m1, m2, m3, m_thres1, m_thres2, m_thres3, s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, hashmap);
+
+    std::cout << "loaded index...\n";
+    in.close();
+
+    this->span1 = k - m1 + 1;
+    this->span2 = k - m2 + 1;
+    this->span3 = k - m3 + 1;
+    this->kmermask = compute_mask(2u * k);
+    this->mmermask1 = compute_mask(2u * m1);
+    this->mmermask2 = compute_mask(2u * m2);
+    this->mmermask3 = compute_mask(2u * m3);
+
+    this->s1_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s1.data()), s1.size(), 3);
+    this->s2_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s2.data()), s2.size(), 3);
+    this->s3_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s3.data()), s3.size(), 3);
+
+    std::cout << "built rank and select ds...\n";
+    
+    return 0;
+}
+
+
+void RSHash::print_info() {
+    const size_t N = text.size()*32;
+    const size_t offset_width = std::bit_width(N);
+    const uint64_t M1 = 1ULL << (m1+m1);
+    const uint64_t M2 = 1ULL << (m2+m2);
+    const uint64_t M3 = 1ULL << (m3+m3);
+    const uint64_t no_minimizers1 = r1.rank(M1);
+    const uint64_t no_skmers1 = s1.size();
+    const uint64_t no_minimizers2 = r2.rank(M2);
+    const uint64_t no_skmers2 = s2.size();
+    const uint64_t no_minimizers3 = r3.rank(M3);
+    const uint64_t no_skmers3 = s3.size();
+
+    std::cout << "====== report ======\n";
+    std::cout << "text length: " << N << "\n";
+    std::cout << "textkmers: " << no_text_kmers <<  '\n';
+    
+    std::cout << "no minimiser1: " << no_minimizers1 << "\n";
+    std::cout << "no distinct minimiser1: " << no_skmers1 << "\n";
+    std::cout << "avg superkmers1: " << (double) no_skmers1/no_minimizers1 <<  '\n';
+    std::cout << "no minimiser2: " << no_minimizers2 << "\n";
+    std::cout << "no distinct minimiser2: " << no_skmers2 << "\n";
+    std::cout << "avg superkmers2: " << (double) no_skmers2/no_minimizers2 <<  '\n';
+    std::cout << "no minimiser3: " << no_minimizers3 << "\n";
+    std::cout << "no distinct minimiser3: " << no_skmers3 << "\n";
+    std::cout << "avg superkmers3: " << (double) no_skmers3/no_minimizers3 <<  '\n';
+    std::cout << "no kmers HT: " << hashmap.size() << " " << (double) hashmap.size()/no_text_kmers*100 << "%\n";
+
+    std::cout << "density r1: " << (double) no_minimizers1/M1*100 << "%\n";
+    std::cout << "density r2: " << (double) no_minimizers2/M2*100 << "%\n";
+    std::cout << "density r3: " << (double) no_minimizers3/M3*100 << "%\n";
+    std::cout << "density s1: " << (double) no_minimizers1/(no_skmers1+1)*100 <<  "%\n";
+    std::cout << "density s2: " << (double) no_minimizers2/(no_skmers2+1)*100 <<  "%\n";
+    std::cout << "density s3: " << (double) no_minimizers3/(no_skmers3+1)*100 <<  "%\n";
+    std::cout << "\nspace per kmer in bit:\n";
+    std::cout << "text: " << (double) 2*N/no_text_kmers << "\n";
+    std::cout << "endpoints: " << (double) endpoints.bitCount()/no_text_kmers << "\n";
+    std::cout << "offsets1: " << (double) no_skmers1*offset_width/no_text_kmers << "\n";
+    std::cout << "offsets2: " << (double) no_skmers2*offset_width/no_text_kmers << "\n";
+    std::cout << "offsets3: " << (double) no_skmers3*offset_width/no_text_kmers << "\n";
+    std::cout << "Hashtable: " << (double) hashmap.capacity()*(sizeof(uint64_t) + 1)*8/no_text_kmers << "\n";
+    std::cout << "R_1: " << (double) r1.bitCount()/no_text_kmers << "\n";
+    std::cout << "R_2: " << (double) r2.bitCount()/no_text_kmers << "\n";
+    std::cout << "R_3: " << (double) r3.bitCount()/no_text_kmers << "\n";
+    std::cout << "S_1: " << (double) (no_skmers1+1)/no_text_kmers << "\n";
+    std::cout << "S_2: " << (double) (no_skmers2+1)/no_text_kmers << "\n";
+    std::cout << "S_3: " << (double) (no_skmers3+1)/no_text_kmers << "\n";
+    
+    std::cout << "total: " << (double) (no_skmers1*offset_width+no_skmers2*offset_width+no_skmers3*offset_width+2*N+r1.bitCount()+r2.bitCount()+r3.bitCount()+no_skmers1+1+s1_select.bitCount()+no_skmers2+1+s2_select.bitCount()+no_skmers3+1+s3_select.bitCount()+endpoints.bitCount()+65*hashmap.bucket_count())/no_text_kmers << "\n";
+}
