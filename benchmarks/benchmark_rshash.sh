@@ -15,14 +15,23 @@ run()
     BASENAME=$(echo "$f" | sed 's/\.fa.gz$//')
     k=31
         if [[ "$BASENAME" == *"bacterial"* ]]; then
-          params=( 18 0 0 129 0 0 1  19 0 0 129 0 0 1 )
+          params=( 18 0 0 128 0 0 1  19 0 0 128 0 0 1 )
         elif [[ "$BASENAME" == *"human"* ]]; then
-          params=( 17 21 25 65 65 65 3  17 0 0 129 0 0 1 )
+          params=( 17 21 25 64 64 64 3  17 0 0 128 0 0 1 )
         elif [[ "$BASENAME" == *"cod"* ]]; then
-          params=( 16 20 24 65 65 65 3  16 0 0 129 0 0 1 )
+          params=( 16 20 24 64 64 64 3  16 0 0 128 0 0 1 )
         elif [[ "$BASENAME" == *"kestrel"* ]]; then
-          params=( 17 20 0 65 129 0 2  18 0 0 129 0 0 1 )
+          params=( 17 20 0 64 128 0 2  18 0 0 128 0 0 1 )
         fi
+        # if [[ "$BASENAME" == *"bacterial"* ]]; then
+        #   params=( 18 21 25 64 64 128 3 )
+        # elif [[ "$BASENAME" == *"human"* ]]; then
+        #   params=( 17 21 25 64 64 128 3 )
+        # elif [[ "$BASENAME" == *"cod"* ]]; then
+        #   params=( 17 21 25 64 64 128 3 )
+        # elif [[ "$BASENAME" == *"kestrel"* ]]; then
+        #   params=( 17 21 25 64 64 128 3 )
+        # fi
 
         for ((i=0; i<${#params[@]}; i+=7)); do
           m1=${params[i]}
@@ -94,7 +103,7 @@ run()
               echo $f >> $LOG
               echo $query >> $LOG
               echo $query
-              /usr/bin/time -v -o time.txt $PROGRAM query -d "${BASENAME}.dict" -l $l -q $query > OUT 2>&1
+              /usr/bin/time -v -o time.txt $PROGRAM lookup -d "${BASENAME}.dict" -q $query > OUT 2>&1
 
               cat OUT >> $LOG
               
@@ -106,7 +115,7 @@ run()
               querytimekmer=$(grep 'time_per_kmer' OUT | awk -F'=' '{print $2}' | awk '{print $1}' | sed 's/ns//')
               extensions=$(grep 'extensions' OUT | awk -F'=' '{print $2}' | awk '{print $1}')
               
-              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found" >> "$CSV"
+              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found" >> "$CSV"
 
               # rm -f time.txt
               # rm -f OUT
@@ -129,7 +138,7 @@ run()
               echo $f >> $LOG
               echo $query >> $LOG
               echo $query
-              /usr/bin/time -v -o time.txt $PROGRAM query -d "${BASENAME}.dict" -l $l -q $query > OUT 2>&1
+              /usr/bin/time -v -o time.txt $PROGRAM lookup -d "${BASENAME}.dict" -q $query > OUT 2>&1
 
               cat OUT >> $LOG
               
@@ -141,7 +150,7 @@ run()
               querytimekmer=$(grep 'time_per_kmer' OUT | awk -F'=' '{print $2}' | awk '{print $1}' | sed 's/ns//')
               extensions=$(grep 'extensions' OUT | awk -F'=' '{print $2}' | awk '{print $1}')
               
-              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found" >> "$CSV"
+              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found" >> "$CSV"
 
               # rm -f time.txt
               # rm -f OUT
@@ -152,8 +161,10 @@ run()
 
 }
 
-FILES=( "../DNA_datasets/Gadus_morhua.gadMor3.0.dna.toplevel.fa.unitigs.fa.ust.fa.gz" "../DNA_datasets/Falco_tinnunculus.FalTin1.0.dna.toplevel.fa.unitigs.fa.ust.fa.gz" "../DNA_datasets/Homo_sapiens.GRCh38.dna.toplevel.fa.unitigs.fa.ust.fa.gz" "../DNA_datasets/bacterial.genome.fixed.fa.unitigs.fa.ust.fa.gz" )
-echo "textfile,queryfile,k,m1,m2,m3,t1,t2,t3,buildtime [s],buildmem [B],indexsize [B],spaceoffsets1 [bits/kmer],spaceoffsets2 [bits/kmer],spaceoffsets3 [bits/kmer],spaceR1 [bits/kmer],spaceR2 [bits/kmer],spaceR3 [bits/kmer],spaceS1 [bits/kmer],spaceS2 [bits/kmer],spaceS3 [bits/kmer],density_r1 [%],density_r2 [%],density_r3 [%],density_s1 [%],density_s2 [%],density_s3 [%],kmers HT [%],no minimizer1,no minimizer2,no minimizer3, no distinct minimizer1,no distinct minimizer2,no distinct minimizer3,space theo [bits/kmer],mem theo [bits/kmer],querytime [ns/kmer],querymem [B],extensions,kmers,found" > "$CSV"
+# FILES=( "../DNA_datasets/Gadus_morhua.gadMor3.0.dna.toplevel.fa.unitigs.fa.ust.fa.gz" "../DNA_datasets/Falco_tinnunculus.FalTin1.0.dna.toplevel.fa.unitigs.fa.ust.fa.gz" "../DNA_datasets/Homo_sapiens.GRCh38.dna.toplevel.fa.unitigs.fa.ust.fa.gz" "../DNA_datasets/bacterial.genome.fixed.fa.unitigs.fa.ust.fa.gz" )
+FILES=( "../../datasets/cod.k31.unitigs.fa.ust.fa.gz" "../../datasets/kestrel.k31.unitigs.fa.ust.fa.gz" "../../datasets/human.k31.unitigs.fa.ust.fa.gz" "../../datasets/bacterial.k31.unitigs.fa.ust.fa.gz")
+# FILES=( "../../datasets/cod.genome.fixed.fa.gz" "../../datasets/kestrel.genome.fixed.fa.gz" "../../datasets/human.genome.fixed.fa.gz" "../../datasets/bacterial.genome.fixed.fa.gz")
+echo "textfile,queryfile,k,m1,m2,m3,t1,t2,t3,buildtime [s],buildmem [B],indexsize [B],spaceoffsets1 [bits/kmer],spaceoffsets2 [bits/kmer],spaceoffsets3 [bits/kmer],spaceR1 [bits/kmer],spaceR2 [bits/kmer],spaceR3 [bits/kmer],spaceS1 [bits/kmer],spaceS2 [bits/kmer],spaceS3 [bits/kmer],HT [bits/kmer],density_r1 [%],density_r2 [%],density_r3 [%],density_s1 [%],density_s2 [%],density_s3 [%],kmers HT [%],no minimizer1,no minimizer2,no minimizer3, no distinct minimizer1,no distinct minimizer2,no distinct minimizer3,space theo [bits/kmer],mem theo [bits/kmer],querytime [ns/kmer],querymem [B],extensions,kmers,found" > "$CSV"
 for f in "${FILES[@]}"; do
   run $f
 done
