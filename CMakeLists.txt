@@ -18,5 +18,5 @@ find_package (sharg 1.0 REQUIRED)
 
 add_subdirectory(source)
 
-# add_subdirectory(test)
+add_subdirectory(test)
 
