@@ -121,6 +121,7 @@ std::vector<uint64_t> get_uncovered_kmers(const std::vector<seqan3::bitpacked_se
             }
             else {
                 for(size_t i=0; i < t; i++) {
+                    cur_mini_unfreq[i] = false;
                     if(mini_unfreq[i])
                         start_positions[i] = minimiser.range_position;
                     mini_unfreq[i] = false;
@@ -173,7 +174,7 @@ void stats(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &input, c
     for(uint8_t j=0; j < t; j++) {
         cum += counter[j];
         cum_skmers += (j+1)*counter[j];
-        std::cout << (j+1) << ',' << std::setprecision(8) << (double) counter[j]/no_minimizers*100 << ',' << std::setprecision(8) << (double) (kmers-kmers_uncovered[j])/kmers*100 << '\n';
+        std::cout << (j+1) << ',' << (double) counter[j]/no_minimizers*100 << ',' << (double) (kmers-kmers_uncovered[j])/kmers*100 << '\n';
     }
     
 }
