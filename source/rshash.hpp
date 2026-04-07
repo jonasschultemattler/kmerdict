@@ -33,9 +33,12 @@ private:
     bit_vector s1, s2, s3;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
+    // std::vector<uint32_t> offsets1, offsets2, offsets3;
     gtl::flat_hash_set<uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
+    template<int level>
+    inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
     template<int level>
     void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
     template<int level>

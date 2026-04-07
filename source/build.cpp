@@ -33,47 +33,100 @@ inline uint64_t mark_sequences(const std::vector<seqan3::bitpacked_sequence<seqa
     return kmers;
 }
 
-
-inline uint64_t get_unfrequent_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
-    const size_t minimiser_length, const size_t threshold, const size_t k, const uint64_t seed,
-    std::vector<uint64_t> &unfreq_minimizers, std::vector<uint8_t> &counts)
+template<int level>
+inline uint64_t RSHash::get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
+    std::vector<size_t> &positions, std::vector<uint64_t> &unfreq_minimizers, std::vector<uint8_t> &counts)
 {
-    std::vector<uint64_t> minimizers;
+    auto view = [&]() {
+    if constexpr (level == 1)
+        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m1, .window_size = k, .seed=seed1});
+    if constexpr (level == 2)
+        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m2, .window_size = k, .seed=seed2});
+    if constexpr (level == 3)
+        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m3, .window_size = k, .seed=seed3});
+    }();
 
     std::cout << "computing minimizers...\n";
-    auto minimiserview = rshash::views::xor_minimiser_and_positions({.minimiser_size = minimiser_length, .window_size = k, .seed=seed});
+    std::vector<std::pair<uint64_t, size_t>> minimizers;
+    size_t length = 32;
+    size_t sequence_id = 0;
     for(auto & sequence : sequences) {
-        for(auto && minimiser : sequence | minimiserview)
-            minimizers.emplace_back(minimiser.minimiser_value);
+        for(auto && minimizer : sequence | view) {
+            if constexpr (level == 1)
+                minimizers.emplace_back(minimizer.minimiser_value, length + minimizer.range_position);
+            else
+                minimizers.emplace_back(minimizer.minimiser_value, positions[sequence_id] + minimizer.range_position);
+        }
+        length += sequence.size();
+        sequence_id++;
     }
 
     std::cout << "sorting minimizers...\n";
-    std::sort(minimizers.begin(), minimizers.end());
+    std::sort(minimizers.begin(), minimizers.end()); // todo: radix sort?
 
-    std::cout << "get unfrequent minimizers...\n";
-    uint64_t current_minimizer = minimizers[0];
-    uint64_t occurences = 1;
+    std::cout << "counting minimizers...\n";
+    uint64_t threshold;
+    if constexpr (level == 1)
+        threshold = m_thres1;
+    if constexpr (level == 2)
+        threshold = m_thres2;
+    if constexpr (level == 3)
+        threshold = m_thres3;
+    
+    uint64_t current_minimizer = minimizers[0].first;
+    uint64_t start = 0;
     uint64_t no_skmers = 0;
-    for(size_t i = 1; i < minimizers.size(); i++) {
-        if(minimizers[i] != current_minimizer) {
+    for(uint64_t i = 1; i < minimizers.size(); i++) {
+        if(minimizers[i].first != current_minimizer) {
+            uint64_t occurences = i - start;
             if(occurences <= threshold) {
                 unfreq_minimizers.emplace_back(current_minimizer);
                 counts.emplace_back(static_cast<uint8_t>(occurences));
                 no_skmers += occurences;
             }
-            current_minimizer = minimizers[i];
-            occurences = 1;
+            current_minimizer = minimizers[i].first;
+            start = i;
         }
-        else
-            occurences++;
     }
-    if(minimizers.back() == current_minimizer && occurences <= threshold) {
+    uint64_t occurences = minimizers.size() - start;
+    if(minimizers.back().first == current_minimizer && occurences <= threshold) {
         unfreq_minimizers.emplace_back(current_minimizer);
         counts.emplace_back(static_cast<uint8_t>(occurences));
         no_skmers += occurences;
     }
 
+    std::cout << "filling minimiser offsets...\n";
+    bits::compact_vector::builder builder;
+    builder.resize(no_skmers, std::bit_width(endpoints.size()));
+
+    current_minimizer = minimizers[0].first;
+    start = 0;
+    for(uint64_t i = 1; i < minimizers.size(); i++) {
+        if(minimizers[i].first != current_minimizer) {
+            uint64_t occurences = i - start;
+            if(occurences <= threshold) {
+                for(uint64_t j = start; j < i; j++)
+                    builder.push_back(minimizers[j].second);
+            }
+            current_minimizer = minimizers[i].first;
+            start = i;
+        }
+    }
+    occurences = minimizers.size() - start;
+    if(minimizers.back().first == current_minimizer && occurences <= threshold) {
+        for(uint64_t j = start; j < minimizers.size(); j++)
+            builder.push_back(minimizers[j].second);
+        no_skmers += occurences;
+    }
+    
     minimizers.clear();
+
+    if constexpr (level == 1)
+        builder.build(offsets1);
+    if constexpr (level == 2)  
+        builder.build(offsets2);
+    if constexpr (level == 3)
+        builder.build(offsets3);
 
     return no_skmers;
 }
@@ -135,65 +188,8 @@ void RSHash::mark_minimizer_occurences(const size_t no_skmers, const std::vector
 
 
 template<int level>
-void RSHash::fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
-    std::vector<size_t> &skmer_positions, std::vector<uint8_t> &minimizer_occurences,
-    const size_t text_length, const size_t no_skmers)
-{
-    auto view = [&]() {
-    if constexpr (level == 1)
-        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m1, .window_size = k, .seed=seed1});
-    if constexpr (level == 2)
-        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m2, .window_size = k, .seed=seed2});
-    if constexpr (level == 3)
-        return rshash::views::xor_minimiser_and_positions({.minimiser_size = m3, .window_size = k, .seed=seed3});
-    }();
-
-    auto & r = [&]() -> auto& {
-    if constexpr (level == 1) return r1;
-    if constexpr (level == 2) return r2;
-    if constexpr (level == 3) return r3;
-    }();
-
-    auto & s = [&]() -> auto& {
-    if constexpr (level == 1) return s1_select;
-    if constexpr (level == 2) return s2_select;
-    if constexpr (level == 3) return s3_select;
-    }();
-
-    const size_t offset_width = std::bit_width(text_length);
-    bits::compact_vector::builder builder;
-    builder.resize(no_skmers, offset_width);
-
-    std::fill(minimizer_occurences.begin(), minimizer_occurences.end(), 0);
-
-    size_t length = 32;
-    size_t skmer_idx = 0;
-    for(auto & sequence : sequences) {
-        for (auto && minimiser : sequence | view) {
-            if(uint64_t minimizer_rank = r.rank(minimiser.minimiser_value); r.rank(minimiser.minimiser_value+1)-minimizer_rank) {
-                size_t minimizer_idx = s.select(minimizer_rank);
-                if constexpr (level == 1)
-                    builder.set(minimizer_idx + minimizer_occurences[minimizer_rank], length + minimiser.range_position);
-                else
-                    builder.set(minimizer_idx + minimizer_occurences[minimizer_rank], skmer_positions[skmer_idx] + minimiser.range_position);
-                minimizer_occurences[minimizer_rank]++;
-            }
-        }
-        skmer_idx++;
-        length += sequence.size();
-    }
-
-    if constexpr (level == 1)
-        builder.build(offsets1);
-    if constexpr (level == 2)
-        builder.build(offsets2);
-    if constexpr (level == 3)
-        builder.build(offsets3);
-}
-
-
-template<int level>
-void RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences, std::vector<size_t> &positions,
+void RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
+    std::vector<size_t> &positions,
     std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &freq_skmers, std::vector<size_t> &skmer_positions)
 {
     auto skmerview = [&]() {
@@ -212,8 +208,9 @@ void RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<se
     }();
     
     size_t length = 32;
-    size_t skmer_idx = 0;
-    for(auto & sequence : sequences) {
+    size_t sequence_id = 0;
+    for(auto & sequence : sequences)
+    {
         size_t start_position = 0;
         bool cur_freq, freq;
 
@@ -232,8 +229,8 @@ void RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<se
                 freq_skmers.emplace_back(skmer);
                 if constexpr (level == 1)
                     skmer_positions.emplace_back(length + start_position);
-                else
-                    skmer_positions.emplace_back(positions[skmer_idx] + start_position);
+                else if constexpr (level == 2)
+                    skmer_positions.emplace_back(positions[sequence_id] + start_position);
             }
             freq = cur_freq;
         }
@@ -244,11 +241,12 @@ void RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<se
             freq_skmers.emplace_back(skmer);
             if constexpr (level == 1)
                 skmer_positions.emplace_back(length + start_position);
-            else
-                skmer_positions.emplace_back(positions[skmer_idx] + start_position);
+            else if constexpr (level == 2)
+                skmer_positions.emplace_back(positions[sequence_id] + start_position);
         }
+
         length += sequence.size();
-        skmer_idx++;
+        sequence_id++;
     }
 }
 
@@ -260,7 +258,8 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
 
     std::vector<uint64_t> minimizers1;
     std::vector<uint8_t> minimizers1_occurences;
-    const uint64_t no_skmers1 = get_unfrequent_minimizers(input, m1, m_thres1, k, seed1, minimizers1, minimizers1_occurences);
+    std::vector<size_t> skmer_positions;
+    const uint64_t no_skmers1 = get_minimizers<1>(input, skmer_positions, minimizers1, minimizers1_occurences);
     const size_t no_minimizers1 = minimizers1.size();
 
     std::cout << "build R_1...\n";
@@ -270,10 +269,6 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
 
     std::cout << "mark skmers1...\n";
     mark_minimizer_occurences<1>(no_skmers1, minimizers1_occurences);
-
-    std::cout << "filling offsets_1...\n";
-    std::vector<size_t> skmer_positions;
-    fill_minimizer_offsets<1>(input, skmer_positions, minimizers1_occurences, text_length, no_skmers1);
     minimizers1_occurences.clear();
 
     std::cout << "get frequent skmers...\n";
@@ -285,28 +280,25 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
         std::cout << "count minimizers2...\n";
         std::vector<uint64_t> minimizers2;
         std::vector<uint8_t> minimizers2_occurences;
-        const uint64_t no_skmers2 = get_unfrequent_minimizers(freq_skmers, m2, m_thres2, k, seed2, minimizers2, minimizers2_occurences);
+        const uint64_t no_skmers2 = get_minimizers<2>(freq_skmers, skmer_positions, minimizers2, minimizers2_occurences);
         const size_t no_minimizers2 = minimizers2.size();
 
         std::cout << "build R_2...\n";
         std::sort(minimizers2.begin(), minimizers2.end());
         const uint64_t M2 = 1ULL << (m2+m2);
         r2 = sux::bits::EliasFano(minimizers2, M2);
+        minimizers2.clear();
 
         std::cout << "mark skmers2...\n";
         mark_minimizer_occurences<2>(no_skmers2, minimizers2_occurences);
-
-        std::cout << "filling offsets_2...\n";
-        fill_minimizer_offsets<2>(freq_skmers, skmer_positions, minimizers2_occurences, text_length, no_skmers2);
         minimizers2_occurences.clear();
-        skmer_positions.clear();
 
         std::cout << "get frequent skmers...\n";
-        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers_;
-        std::vector<size_t> skmer_positions_;
-        get_frequent_skmers<2>(freq_skmers, skmer_positions, freq_skmers_, skmer_positions_);
-        freq_skmers = freq_skmers_;
-        skmer_positions = skmer_positions_;
+        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers2;
+        std::vector<size_t> skmer_positions2;
+        get_frequent_skmers<2>(freq_skmers, skmer_positions, freq_skmers2, skmer_positions2);
+        freq_skmers = freq_skmers2;
+        skmer_positions = skmer_positions2;
     }
 
     if(level > 2)
@@ -314,28 +306,25 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
         std::cout << "count minimizers3...\n";
         std::vector<uint64_t> minimizers3;
         std::vector<uint8_t> minimizers3_occurences;
-        const uint64_t no_skmers3 = get_unfrequent_minimizers(freq_skmers, m3, m_thres3, k, seed3, minimizers3, minimizers3_occurences);
+        const uint64_t no_skmers3 = get_minimizers<3>(freq_skmers, skmer_positions, minimizers3, minimizers3_occurences);
         const size_t no_minimizers3 = minimizers3.size();
 
         std::cout << "build R_3...\n";
         std::sort(minimizers3.begin(), minimizers3.end());
         const uint64_t M3 = 1ULL << (m3+m3);
         r3 = sux::bits::EliasFano(minimizers3, M3);
+        minimizers3.clear();
 
         std::cout << "mark skmers3...\n";
         mark_minimizer_occurences<3>(no_skmers3, minimizers3_occurences);
-
-        std::cout << "filling offsets_3...\n";
-        fill_minimizer_offsets<3>(freq_skmers, skmer_positions, minimizers3_occurences, text_length, no_skmers3);
         minimizers3_occurences.clear();
-        skmer_positions.clear();
 
         std::cout << "get frequent skmers...\n";
-        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers_;
-        std::vector<size_t> skmer_positions_;
-        get_frequent_skmers<3>(freq_skmers, skmer_positions, freq_skmers_, skmer_positions_);
-        freq_skmers = freq_skmers_;
-        skmer_positions = skmer_positions_;
+        std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> freq_skmers3;
+        std::vector<size_t> skmer_positions3;
+        get_frequent_skmers<3>(freq_skmers, skmer_positions, freq_skmers3, skmer_positions3);
+        freq_skmers = freq_skmers3;
+        skmer_positions = skmer_positions3;
     }
 
     std::cout << "build HT...\n";
