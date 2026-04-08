@@ -37,14 +37,14 @@ private:
     gtl::flat_hash_set<uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
-    template<int level>
+    template<int level, typename PosT>
     inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
     template<int level>
     void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
     template<int level>
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
-    void get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &);
+    uint64_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
