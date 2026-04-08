@@ -58,6 +58,7 @@ inline uint64_t RSHash::get_minimizers(const std::vector<seqan3::bitpacked_seque
             if constexpr (level == 1)
                 minimizers.emplace_back(minimizer.minimiser_value, length + minimizer.range_position);
                 // todo: save sequence id and position separately to save space during construction
+                // assuming that sequence lengths are small compared to text length
             else
                 minimizers.emplace_back(minimizer.minimiser_value, positions[sequence_id] + minimizer.range_position);
         }
@@ -105,7 +106,7 @@ inline uint64_t RSHash::get_minimizers(const std::vector<seqan3::bitpacked_seque
 
     std::cout << "filling minimiser offsets...\n";
     bits::compact_vector::builder builder;
-    builder.resize(no_skmers, std::bit_width(endpoints.size()));
+    builder.resize(no_skmers, std::bit_width(endpoints.size())); // todo: in place
     for(size_t i = 0; i < write_pos_idx; i++)
         builder.push_back(minimizers[i].second);
     
