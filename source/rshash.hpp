@@ -17,14 +17,29 @@ const uint64_t seed2 = 0x29'6D'BD'33'32'56'8C'64;
 const uint64_t seed3 = 0xE5'9A'38'5F'03'76'C9'F6;
 
 
+struct SkmerInfo {
+    size_t seq_id;
+    size_t start;
+    size_t end;
+};
+
+struct MinimizerInfo32 {
+    uint64_t minimizer_value;
+    uint32_t position;
+};
+
+struct MinimizerInfo64 {
+    uint64_t minimizer_value;
+    uint64_t position;
+};
+
 #ifndef RSHASH_HPP
 #define RSHASH_HPP
 
 class RSHash
 {
 private:
-    uint64_t level;
-    uint64_t k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
+    uint64_t level, k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
     uint64_t span1, span2, span3;
     uint64_t kmermask, mmermask1, mmermask2, mmermask3;
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
@@ -33,18 +48,19 @@ private:
     bit_vector s1, s2, s3;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
-    // std::vector<uint32_t> offsets1, offsets2, offsets3;
     gtl::flat_hash_set<uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
+    template<int level, typename MinimizerT>
+    inline void filter_freq_minimizers(std::vector<MinimizerT> &, std::vector<uint8_t> &, size_t &, size_t &);
     template<int level, typename PosT>
-    inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
+    inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
     template<int level>
     void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
     template<int level>
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
-    uint64_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &);
+    uint64_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
