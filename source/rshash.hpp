@@ -120,7 +120,6 @@ public:
     uint8_t getk() { return k; }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
-    std::vector<uint64_t> rand_text_kmers(const uint64_t);
     const inline uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
@@ -128,7 +127,8 @@ public:
     void streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
-    void print_info() {
+    void print_info()
+    {
         const size_t N = text.size()*32;
         const size_t offset_width = std::bit_width(N);
         const uint64_t M1 = 1ULL << (m1+m1);
@@ -177,6 +177,35 @@ public:
         std::cout << "S_3: " << (double) (no_skmers3+1)/no_text_kmers << "\n";
     
         std::cout << "total: " << (double) (no_skmers1*offset_width+no_skmers2*offset_width+no_skmers3*offset_width+2*N+r1.bitCount()+r2.bitCount()+r3.bitCount()+no_skmers1+1+s1_select.bitCount()+no_skmers2+1+s2_select.bitCount()+no_skmers3+1+s3_select.bitCount()+endpoints.bitCount()+65*hashmap.bucket_count())/no_text_kmers << "\n";
+    }
+    std::vector<uint64_t> rand_text_kmers(const uint64_t n)
+    {
+        std::uniform_int_distribution<uint32_t> distr;
+        std::mt19937 m_rand(1);
+        std::vector<std::uint64_t> kmers;
+        kmers.reserve(n);
+        const uint64_t l = (text.size()-1)*32;
+
+        const uint64_t no_unitigs = number_unitigs();
+        for (uint64_t i = 0; i < n;) {
+            const uint64_t offset = distr(m_rand) % l;
+
+            const uint64_t r = endpoints.rank(offset+1);
+            const uint64_t next_endpoint = endpoints.select(r);
+
+            if(offset + 64 >= next_endpoint)
+                continue;
+
+            const uint64_t kmer = access(0, offset);
+
+            if ((i & 1) == 0)
+                kmers.push_back(crc(kmer, k));
+            else
+                kmers.push_back(kmer);
+
+            i++;
+        }
+        return kmers;
     }
 };
 

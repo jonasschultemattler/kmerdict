@@ -195,7 +195,8 @@ void RSHash::mark_minimizer_occurences(const size_t no_skmers, const std::vector
 
 
 template<int level>
-size_t RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
+size_t RSHash::get_frequent_skmers(
+    const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
     std::vector<SkmerInfo> &skmers, std::vector<SkmerInfo> &skmers_out)
 {
     auto skmerview = [&]() {
@@ -212,7 +213,7 @@ size_t RSHash::get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<
     if constexpr (level == 2) return r2;
     if constexpr (level == 3) return r3;
     }();
-
+    
     size_t freq_kmers = 0;
     if constexpr (level == 1)
     {
@@ -355,7 +356,7 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
     }
 
     std::cout << "build HT...\n";
-    // hashmap.reserve(freq_kmers);
+    hashmap.reserve(freq_kmers);
     for(const auto & skmer_info : freq_skmers) {
         auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
         for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
