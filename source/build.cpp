@@ -356,7 +356,7 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
     }
 
     std::cout << "build HT...\n";
-    hashmap.reserve(freq_kmers);
+    // hashmap.reserve(freq_kmers);
     for(const auto & skmer_info : freq_skmers) {
         auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
         for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
