@@ -23,15 +23,50 @@ struct SkmerInfo {
     size_t end;
 };
 
-struct MinimizerInfo32 {
-    uint64_t minimizer_value;
-    uint32_t position;
+// struct MinimizerInfo32 {
+//     uint64_t minimizer_value;
+//     uint32_t position;
+
+//     bool compare(const MinimizerInfo32 &x, const MinimizerInfo32 &y) {
+//     	return x.minimizer_value < y.minimizer_value;
+//     }
+// };
+
+// struct MinimizerInfo64 {
+//     uint64_t minimizer_value;
+//     uint64_t position;
+
+//     bool compare(const MinimizerInfo64 &x, const MinimizerInfo64 &y) {
+//     	return x.minimizer_value < y.minimizer_value;
+//     }
+// };
+
+typedef std::pair<uint64_t, uint32_t> MinimizerInfo32;
+typedef std::pair<uint64_t, uint64_t> MinimizerInfo64;
+
+struct RadixTraitsMinimizer32 {
+    static const int nBytes = 12;
+    int kth_byte(const MinimizerInfo32 &x, int k) {
+    	if (k >= 8) return x.first >> ((k - 8) * 8) & 0xFF;
+    	return x.second >> (k * 8) & 0xFF;
+    }
+    bool compare(const MinimizerInfo32 &x, const MinimizerInfo32 &y) {
+    	return x.first < y.first;
+    }
 };
 
-struct MinimizerInfo64 {
-    uint64_t minimizer_value;
-    uint64_t position;
+struct RadixTraitsMinimizer64 {
+    static const int nBytes = 16;
+    int kth_byte(const MinimizerInfo64 &x, int k) {
+    	if (k >= 8) return x.first >> ((k - 8) * 8) & 0xFF;
+    	return x.second >> (k * 8) & 0xFF;
+    }
+    bool compare(const MinimizerInfo64 &x, const MinimizerInfo64 &y) {
+    	return x.first < y.first;
+    }
 };
+
+
 
 #ifndef RSHASH_HPP
 #define RSHASH_HPP
@@ -39,7 +74,8 @@ struct MinimizerInfo64 {
 class RSHash
 {
 private:
-    uint64_t level, k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
+    uint64_t level;
+    uint64_t k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
     uint64_t span1, span2, span3;
     uint64_t kmermask, mmermask1, mmermask2, mmermask3;
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
@@ -48,19 +84,21 @@ private:
     bit_vector s1, s2, s3;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
+    // std::vector<uint32_t> offsets1, offsets2, offsets3;
     gtl::flat_hash_set<uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level, typename MinimizerT>
-    inline void filter_freq_minimizers(std::vector<MinimizerT> &, std::vector<uint8_t> &, size_t &, size_t &);
-    template<int level, typename PosT>
+    inline void filter_freq_minimizers(std::vector<MinimizerT> &minimizers,
+    std::vector<uint8_t> &counts, size_t &no_minimizers, size_t &no_skmers);
+    template<int level, typename MinimizerT>
     inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
     template<int level>
     void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
     template<int level>
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
-    size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
+    size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
@@ -120,6 +158,7 @@ public:
     uint8_t getk() { return k; }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
+    // std::vector<uint64_t> rand_text_kmers(const uint64_t);
     const inline uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
@@ -127,8 +166,7 @@ public:
     void streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
-    void print_info()
-    {
+    void print_info() {
         const size_t N = text.size()*32;
         const size_t offset_width = std::bit_width(N);
         const uint64_t M1 = 1ULL << (m1+m1);
