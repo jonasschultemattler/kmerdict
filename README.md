@@ -32,7 +32,7 @@ See usage, command line options, and parameters with
 e.g.
 ```
 .build/source/rshash build -i ../datasets/genome.fa.ust.fa.gz -d ../datasets/genome.rshash -k 31 --m1 18 --t1 64 -l 1
-.build/source/rshash query -d ../datasets/genome.rshash -l 1 -q ../datasets/query.fastq.gz
+.build/source/rshash query -d ../datasets/genome.rshash -q ../datasets/query.fastq.gz
 ```
 
 ### Benchmarks
