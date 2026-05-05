@@ -86,6 +86,7 @@ private:
     bits::compact_vector offsets1, offsets2, offsets3;
     // std::vector<uint32_t> offsets1, offsets2, offsets3;
     gtl::flat_hash_set<uint64_t> hashmap;
+    // gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level, typename MinimizerT>
@@ -99,6 +100,7 @@ private:
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
     size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
+    std::vector<uint64_t> filter_freq_kmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
@@ -121,15 +123,18 @@ private:
     uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    size_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &);
+    size_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &);
+    size_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &);
     uint64_t lookup1(const std::vector<uint64_t>&);
     uint64_t lookup2(const std::vector<uint64_t>&);
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<int level>
-    inline void report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
     template<int level>
-    inline void report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
     template<int level>
-    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
+    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &, size_t &);
 
 
 
@@ -156,6 +161,7 @@ public:
         mmermask3(compute_mask(2u * m3))
     {}
     uint8_t getk() { return k; }
+    uint8_t getmaxmthres() { return std::max({m_thres1, m_thres2, m_thres3}); }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
     // std::vector<uint64_t> rand_text_kmers(const uint64_t);
@@ -163,7 +169,7 @@ public:
     uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    void streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
+    size_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
     void print_info() {

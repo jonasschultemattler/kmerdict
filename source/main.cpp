@@ -80,15 +80,18 @@ struct my_traits:seqan3::sequence_file_input_default_traits_dna {
 };
 
 
-void load_file(const std::filesystem::path &filepath,
+size_t load_file(const std::filesystem::path &filepath,
                std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &output)
 {
     auto stream = seqan3::sequence_file_input<my_traits>{filepath};
+    size_t max_length = 0;
     for (auto & record : stream) {
         seqan3::bitpacked_sequence<seqan3::dna4> seq;
         seq.assign(record.sequence().begin(), record.sequence().end());
         output.push_back(std::move(seq));
+        max_length = std::max(max_length, record.sequence().size());
     }
+    return max_length;
 }
 
 int main(int argc, char** argv)
@@ -149,7 +152,7 @@ int main(int argc, char** argv)
     {
         std::cout << "loading queries...\n";
         std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> queries;
-        load_file(args.q, queries);
+        size_t max_query_length = load_file(args.q, queries);
 
         std::chrono::nanoseconds elapsed;
         size_t kmers = 0;
@@ -159,25 +162,31 @@ int main(int argc, char** argv)
         index.load(args.d);
 
         std::cout << "locating...\n";
-        std::vector<std::pair<uint64_t, bool>> positions;
+        // std::vector<std::pair<uint64_t, bool>> all_positions(queries.size() * max_query_length * index.getmaxmthres());
+        // std::vector<std::pair<uint64_t, bool>> all_positions;
+        size_t all_found_positions = 0;
+        std::vector<std::pair<uint64_t, bool>> positions(max_query_length * index.getmaxmthres());
 
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
-        uint64_t q = 0;
         for (auto query : queries) {
-            // std::cout << q++ << ": ";
-            index.streaming_locate(query, positions);
+            const size_t found_positions = index.streaming_locate(query, positions);
+            all_found_positions += found_positions;
+            // all_positions.insert(all_positions.end(), positions.begin(), positions.begin() + found_positions);
             kmers += query.size() - index.getk() + 1;
         }
         std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
 
-        for (const auto& pos : positions) {
-            std::cout << "(" << pos.first << "," << pos.second << ")";
-        }
+        // for(size_t i = 0; i < all_found_positions; i++) {
+        //     auto pos = all_positions[i];
+        //     std::cout << "(" << pos.first << "," << pos.second << ")";
+        // }
         
         double ns_per_kmer = (double) elapsed.count() / kmers;
         
         std::cout << "==== query report:\n";
+        std::cout << "num_kmers = " << kmers << '\n';
+        std::cout << "num_positive_kmers = " << all_found_positions << "\n";
         std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
     }
     else if(args.cmd == "bench")
