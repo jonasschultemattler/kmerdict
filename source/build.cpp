@@ -278,46 +278,50 @@ size_t RSHash::get_frequent_skmers(
 }
 
 
-std::vector<uint64_t> RSHash::filter_freq_kmers(
-    const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& input, const std::vector<SkmerInfo> &freq_skmers)
-{
-    size_t threshold;
-    if (level == 1)
-        threshold = m_thres1;
-    if (level == 2)
-        threshold = m_thres2;
-    if (level == 3)
-        threshold = m_thres3;
+void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& input,
+    const std::vector<SkmerInfo> &freq_skmers, const size_t threshold)
+{   
+    // std::vector<uint64_t> kmers;
+    // for(const auto & skmer_info : freq_skmers) {
+    //     auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
+    //     for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
+    //         kmers.emplace_back(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev));
+    // }
+
+    // kx::radix_sort(kmers.begin(), kmers.end());
     
-    std::vector<uint64_t> kmers;
+    // uint64_t current_kmer = kmers[0];
+    // uint64_t start = 0;
+    // size_t idx = 0;
+    // for(size_t i = 1; i < kmers.size(); i++) {
+    //     if(kmers[i] != current_kmer) {
+    //         size_t occurences = i - start;
+    //         if(occurences <= threshold)
+    //             kmers[idx++] = current_kmer;
+
+    //         current_kmer = kmers[i];
+    //         start = i;
+    //     }
+    // }
+    // size_t occurences = kmers.size() - start;
+    // if(kmers.back() == current_kmer && occurences <= threshold)
+    //     kmers[idx++] = current_kmer;
+
+    // kmers.resize(idx);
+
+    gtl::flat_hash_map<uint64_t, uint32_t> kmer_counts;
     for(const auto & skmer_info : freq_skmers) {
         auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
         for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
-            kmers.emplace_back(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev));
+            kmer_counts[std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev)]++;
     }
-
-    kx::radix_sort(kmers.begin(), kmers.end());
     
-    uint64_t current_kmer = kmers[0];
-    uint64_t start = 0;
-    size_t idx = 0;
-    for(size_t i = 1; i < kmers.size(); i++) {
-        if(kmers[i] != current_kmer) {
-            size_t occurences = i - start;
-            if(occurences <= threshold)
-                kmers[idx++] = current_kmer;
-
-            current_kmer = kmers[i];
-            start = i;
-        }
+    for(const auto & [kmer, count] : kmer_counts) {
+        if(count <= threshold)
+            hashmap[kmer] = count;
     }
-    size_t occurences = kmers.size() - start;
-    if(kmers.back() == current_kmer && occurences <= threshold)
-        kmers[idx++] = current_kmer;
+    kmer_counts.clear();
 
-    kmers.resize(idx);
-
-    return kmers;
 }
 
 
@@ -403,19 +407,13 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
     }
 
     std::cout << "build HT...\n";
-    // for(const auto & skmer_info : freq_skmers) {
-    //     auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-    //     for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
-    //         hashmap[std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev)]++;
-    // }
-    hashmap.reserve(freq_kmers);
-    // std::vector<uint64_t> unfreq_kmers_vec = filter_freq_kmers(input, freq_skmers);
-    // hashmap.reserve(unfreq_kmers_vec.size());
-    // for(const auto & kmer : unfreq_kmers_vec)
+    // fill_ht(input, freq_skmers, 128);
+
     for(const auto & skmer_info : freq_skmers) {
         auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
         for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
-            hashmap.insert(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev));
+            // hashmap.insert(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev));
+            hashmap[std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev)]++;
     }
 
     std::cout << "copy text...\n";

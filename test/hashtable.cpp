@@ -2,6 +2,7 @@
 #include <seqan3/io/sequence_file/all.hpp>
 #include <seqan3/alphabet/container/bitpacked_sequence.hpp>
 #include "../source/minimiser_views.hpp"
+#include <gtl/phmap.hpp>
 
 
 struct cmd_arguments {
@@ -63,12 +64,14 @@ int main(int argc, char** argv)
     load_file(args.i, text);
 
     std::cout << "building hashtable...\n";
-    std::unordered_set<uint64_t> ht;
+    // std::unordered_set<uint64_t> ht;
+    gtl::flat_hash_map<uint64_t, uint64_t> ht;
 
     for(auto & sequence : text) {
         for(auto && window : sequence | rshash::views::kmerview({.window_size = args.k})) {
             uint64_t kmer = std::min<uint64_t>(window.kmer_value, window.kmer_value_rev);
-            ht.insert(kmer);
+            ht[kmer]++;
+            // ht.insert(kmer);
         }
     }
      
@@ -78,12 +81,17 @@ int main(int argc, char** argv)
 
     std::cout << "querying...\n";
     uint64_t kmers = 0;
-    uint64_t found = 0;
+    uint64_t found_kmers = 0;
+    uint64_t found_positions = 0;
     
     std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
     for (auto query : queries) {
         for (auto && window : query | rshash::views::kmerview({.window_size = args.k})) {
-            found += ht.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+            // found += ht.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+            if (auto it = ht.find(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev)); it != ht.end()) {
+                found_kmers++;
+                found_positions += it->second;
+            }
         }
         kmers += query.size() - args.k + 1;
     }
@@ -94,7 +102,8 @@ int main(int argc, char** argv)
         
     std::cout << "==== query report:\n";
     std::cout << "num_kmers = " << kmers << '\n';
-    std::cout << "num_positive_kmers = " << found << " (" << (double) found/kmers*100 << "%)\n";
+    std::cout << "num_positive_kmers = " << found_kmers << " (" << (double) found_kmers/kmers*100 << "%)\n";
+    std::cout << "num_positions = " << found_positions << '\n';
     std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
  
     return 0;

@@ -33,6 +33,7 @@ struct cmd_arguments {
     uint8_t t1{64};
     uint8_t t2{64};
     uint16_t t3{64};
+    uint32_t shape{std::numeric_limits<uint32_t>::max()};
     bool loc{false};
 };
 
@@ -49,6 +50,7 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
     parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
+    parser.add_option(args.shape, sharg::config{.long_id = "shape", .description = "shape value"});
 }
 
 int check_arguments(sharg::parser &parser, cmd_arguments &args) {
@@ -114,7 +116,7 @@ int main(int argc, char** argv)
         load_file(args.i, text);
 
         std::cout << "building dict...\n";
-        RSHash index = RSHash(args.k, args.l, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3);
+        RSHash index = RSHash(args.k, args.l, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.shape);
         index.build(text);
         index.save(args.d);
     }
@@ -165,12 +167,12 @@ int main(int argc, char** argv)
         // std::vector<std::pair<uint64_t, bool>> all_positions(queries.size() * max_query_length * index.getmaxmthres());
         // std::vector<std::pair<uint64_t, bool>> all_positions;
         size_t all_found_positions = 0;
+        size_t found_kmers = 0;
         std::vector<std::pair<uint64_t, bool>> positions(max_query_length * index.getmaxmthres());
 
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
         for (auto query : queries) {
-            const size_t found_positions = index.streaming_locate(query, positions);
-            all_found_positions += found_positions;
+            found_kmers += index.streaming_locate(query, positions, all_found_positions);
             // all_positions.insert(all_positions.end(), positions.begin(), positions.begin() + found_positions);
             kmers += query.size() - index.getk() + 1;
         }
@@ -186,7 +188,8 @@ int main(int argc, char** argv)
         
         std::cout << "==== query report:\n";
         std::cout << "num_kmers = " << kmers << '\n';
-        std::cout << "num_positive_kmers = " << all_found_positions << "\n";
+        std::cout << "num_positive_kmers = " << found_kmers << "\n";
+        std::cout << "num_positions = " << all_found_positions << '\n';
         std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
     }
     else if(args.cmd == "bench")

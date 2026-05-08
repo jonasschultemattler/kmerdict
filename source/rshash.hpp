@@ -78,6 +78,7 @@ private:
     uint64_t k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
     uint64_t span1, span2, span3;
     uint64_t kmermask, mmermask1, mmermask2, mmermask3;
+    uint32_t shape;
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
     uint64_t no_text_kmers;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> r1, r2, r3;
@@ -85,8 +86,8 @@ private:
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
     // std::vector<uint32_t> offsets1, offsets2, offsets3;
-    gtl::flat_hash_set<uint64_t> hashmap;
-    // gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
+    // gtl::flat_hash_set<uint64_t> hashmap;
+    gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level, typename MinimizerT>
@@ -100,7 +101,7 @@ private:
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
     size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
-    std::vector<uint64_t> filter_freq_kmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
+    void fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &, const size_t);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
@@ -123,9 +124,9 @@ private:
     uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    size_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &);
-    size_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &);
-    size_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &);
+    size_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
+    size_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
+    size_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
     uint64_t lookup1(const std::vector<uint64_t>&);
     uint64_t lookup2(const std::vector<uint64_t>&);
     uint64_t lookup3(const std::vector<uint64_t>&);
@@ -134,7 +135,7 @@ private:
     template<int level>
     inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
     template<int level>
-    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &, size_t &);
+    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
 
 
 
@@ -146,9 +147,9 @@ public:
         m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
     {}
     RSHash(uint8_t const k, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
-            uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3)
+            uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint32_t const shape)
         : k(k), level(level), m1(m1), m2(m2), m3(m3),
-        m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3),
+        m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), shape(shape),
         span1(k-m1+1), span2(k-m2+1), span3(k-m3+1),
         endpoints(std::vector<uint64_t>{}, 1),
         r1(std::vector<uint64_t>{}, 1),
@@ -169,7 +170,7 @@ public:
     uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    size_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &positions);
+    size_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
     void print_info() {
