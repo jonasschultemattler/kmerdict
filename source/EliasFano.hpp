@@ -325,6 +325,59 @@ template <util::AllocType AT = util::AllocType::MALLOC> class EliasFano : public
 #endif
 	}
 
+	bool contains(const uint64_t x, uint64_t& rank_out) {
+    if (num_ones == 0) {
+        rank_out = 0;
+        return false;
+    }
+
+    if (x >= num_bits) {
+        rank_out = num_ones;
+        return false;
+    }
+
+    const uint64_t x_upper = x >> l;
+    const uint64_t x_lower = x & lower_l_bits_mask;
+
+    int64_t pos = selectz_upper.selectZero(x_upper);
+
+    uint64_t rank = pos - x_upper;
+
+    uint64_t rank_times_l = rank * l;
+
+    bool found = false;
+
+    do {
+        rank--;
+        rank_times_l -= l;
+        pos--;
+
+        if (pos >= 0 &&
+            (upper_bits[pos / 64] & (1ULL << (pos % 64)))) {
+
+            const uint64_t candidate_lower =
+                get_bits(lower_bits, rank_times_l, l);
+
+            if (candidate_lower == x_lower) {
+                found = true;
+            }
+
+            if (candidate_lower < x_lower) {
+                break;
+            }
+        }
+        else {
+            break;
+        }
+
+    } while (true);
+
+    rank_out = ++rank;
+
+    return found;
+}
+
+
 	size_t select(const uint64_t rank) {
 #ifdef DEBUG
 		printf("Selecting %lld...\n", rank);

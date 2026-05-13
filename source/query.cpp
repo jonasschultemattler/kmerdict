@@ -480,7 +480,7 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
                 found = lookup_buffer<1>(buffer1, offsets1, no_skmers1, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end);
                 occurences += found;
             }
-            else if(minimiser1 != current_neg_minimiser1 && (minimiser1_rank = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser1_rank)) {
+            else if(minimiser1 != current_neg_minimiser1 && r1.contains(minimiser1, minimiser1_rank)) {
                 const size_t p = s1_select.select(minimiser1_rank);
                 no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
 
@@ -550,7 +550,7 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
                 occurences += found;
                 rolling2 = false;
             }
-            else if(minimiser1 != current_neg_minimiser1 && (minimiser1_rank = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser1_rank)) {
+            else if(minimiser1 != current_neg_minimiser1 && r1.contains(minimiser1, minimiser1_rank)) {
                 const size_t p = s1_select.select(minimiser1_rank);
                 no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
 
@@ -572,7 +572,7 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
                     found = lookup_buffer<2>(buffer2, offsets2, no_skmers2, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end);
                     occurences += found;
                 }
-                else if(minimiser2 != current_neg_minimiser2 && (minimiser2_rank = r2.rank(minimiser2), r2.rank(minimiser2 + 1) - minimiser2_rank)) {
+                else if(minimiser2 != current_neg_minimiser2 && r2.contains(minimiser2, minimiser2_rank)) {
                     const size_t p = s2_select.select(minimiser2_rank);
                     no_skmers2 = s2_select.select(minimiser2_rank+1) - p;
 
@@ -654,7 +654,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                 rolling2 = false;
                 rolling3 = false;
             }
-            else if(minimiser1 != current_neg_minimiser1 && (minimiser1_rank = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser1_rank)) {
+            else if(minimiser1 != current_neg_minimiser1 && r1.contains(minimiser1, minimiser1_rank)) {
                 const size_t p = s1_select.select(minimiser1_rank);
                 no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
 
@@ -678,7 +678,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                     occurences += found;
                     rolling3 = false;
                 }
-                else if(minimiser2 != current_neg_minimiser2 && (minimiser2_rank = r2.rank(minimiser2), r2.rank(minimiser2 + 1) - minimiser2_rank)) {
+                else if(minimiser2 != current_neg_minimiser2 && r2.contains(minimiser2, minimiser2_rank)) {
                     const size_t p = s2_select.select(minimiser2_rank);
                     no_skmers2 = s2_select.select(minimiser2_rank+1) - p;
 
@@ -701,7 +701,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                         found = lookup_buffer<3>(buffer3, offsets3, no_skmers3, window.kmer_value, window.kmer_value_rev, text_pos, left_minimiser3_position, right_minimiser3_position, forward, unitig_begin, unitig_end);
                         occurences += found;
                     }
-                    else if(minimiser3 != current_neg_minimiser3 && (minimiser3_rank = r3.rank(minimiser3), r3.rank(minimiser3 + 1) - minimiser3_rank)) {
+                    else if(minimiser3 != current_neg_minimiser3 && r3.contains(minimiser3, minimiser3_rank)) {
                         const size_t p = s3_select.select(minimiser3_rank);
                         no_skmers3 = s3_select.select(minimiser3_rank+1) - p;
 
@@ -751,19 +751,19 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset
 
     if(buffer[s+minimiser_pos] == kmerrc) {
         const uint64_t text_pos = offset + minimiser_pos;
-        if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
+        // if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
             // positions[i++] = {text_pos, true};
             i++;
             return true;
-        }
+        // }
     }
     if(buffer[s+span-1-minimiser_pos] == kmer) {
         const uint64_t text_pos = offset + span-1-minimiser_pos + k - 1;
-        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
+        // if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
             // positions[i++] = {text_pos, false};
             i++;
             return true;
-        }
+        // }
     }
     return false;
 }
@@ -785,35 +785,35 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offse
     
     if(buffer[s+left_minimiser_pos] == kmerrc) {
         const uint64_t text_pos = offset + left_minimiser_pos;
-        if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
+        // if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
             // positions[i++] = {text_pos, true};
             i++;
             return true;
-        }
+        // }
     }
     if(buffer[s+span-1-left_minimiser_pos] == kmer) {
         const uint64_t text_pos = offset + span-1-left_minimiser_pos + k - 1;
-        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
+        // if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
             // positions[i++] = {text_pos, false};
             i++;
             return true;
-        }
+        // }
     }
     if(buffer[s+right_minimiser_pos] == kmer) {
         const uint64_t text_pos = offset + right_minimiser_pos + k - 1;
-        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
+        // if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
             // positions[i++] = {text_pos, true};
             i++;
             return true;
-        }
+        // }
     }
     if(buffer[s+span-1-right_minimiser_pos] == kmerrc) {
         const uint64_t text_pos = offset + span-1-right_minimiser_pos;
-        if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
+        // if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
             // positions[i++] = {text_pos, false};
             i++;
             return true;
-        }
+        // }
     }
     return false;
 }
