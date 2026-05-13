@@ -898,7 +898,7 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
         if(minimiser == current_pos_minimiser) {
             locate_buffer<1>(kmer_buffer, offsets, no_minimiser, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position, right_minimiser_position, sequence_begin, sequence_end, positions, found_positions, found_kmers);
         }
-        else if(minimiser != current_neg_minimiser && (minimiser_rank = r1.rank(minimiser), r1.rank(minimiser + 1) - minimiser_rank)) {
+        else if(minimiser != current_neg_minimiser && r1.contains(minimiser, minimiser_rank)) {
             const size_t minimiser_position = s1_select.select(minimiser_rank);
             no_minimiser = s1_select.select(minimiser_rank+1) - minimiser_position;
 
@@ -959,7 +959,7 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
         if(minimiser1 == current_pos_minimiser1) {
             locate_buffer<1>(kmer_buffer1, offsets1, no_minimiser1, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position1, right_minimiser_position1, sequence_begin, sequence_end, positions, found_positions, found_kmers);
         }
-        else if(minimiser1 != current_neg_minimiser1 && (minimiser_rank1 = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser_rank1)) {
+        else if(minimiser1 != current_neg_minimiser1 && r1.contains(minimiser1, minimiser_rank1)) {
             const size_t minimiser_position1 = s1_select.select(minimiser_rank1);
             no_minimiser1 = s1_select.select(minimiser_rank1+1) - minimiser_position1;
 
@@ -970,7 +970,7 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
         else if (minimiser2 == current_pos_minimiser2) {
             locate_buffer<2>(kmer_buffer2, offsets2, no_minimiser2, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position2, right_minimiser_position2, sequence_begin, sequence_end, positions, found_positions, found_kmers);
         }
-        else if(minimiser2 != current_neg_minimiser2 && (minimiser_rank2 = r2.rank(minimiser2), r2.rank(minimiser2 + 1) - minimiser_rank2)) {
+        else if(minimiser2 != current_neg_minimiser2 && r2.contains(minimiser2, minimiser_rank2)) {
             const size_t minimiser_position2 = s2_select.select(minimiser_rank2);
             no_minimiser2 = s2_select.select(minimiser_rank2+1) - minimiser_position2;
 
@@ -1044,7 +1044,7 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
         if(minimiser1 == current_pos_minimiser1) {
             locate_buffer<1>(kmer_buffer1, offsets1, no_minimiser1, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position1, right_minimiser_position1, sequence_begin, sequence_end, positions, found_positions, found_kmers);
         }
-        else if(minimiser1 != current_neg_minimiser1 && (minimiser_rank1 = r1.rank(minimiser1), r1.rank(minimiser1 + 1) - minimiser_rank1)) {
+        else if(minimiser1 != current_neg_minimiser1 && r1.contains(minimiser1, minimiser_rank1)) {
             const size_t minimiser_position1 = s1_select.select(minimiser_rank1);
             no_minimiser1 = s1_select.select(minimiser_rank1+1) - minimiser_position1;
 
@@ -1055,7 +1055,7 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
         else if (minimiser2 == current_pos_minimiser2) {
             locate_buffer<2>(kmer_buffer2, offsets2, no_minimiser2, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position2, right_minimiser_position2, sequence_begin, sequence_end, positions, found_positions, found_kmers);
         }
-        else if(minimiser2 != current_neg_minimiser2 && (minimiser_rank2 = r2.rank(minimiser2), r2.rank(minimiser2 + 1) - minimiser_rank2)) {
+        else if(minimiser2 != current_neg_minimiser2 && r2.contains(minimiser2, minimiser_rank2)) {
             const size_t minimiser_position2 = s2_select.select(minimiser_rank2);
             no_minimiser2 = s2_select.select(minimiser_rank2+1) - minimiser_position2;
 
@@ -1067,7 +1067,7 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
         else if(minimiser3 == current_pos_minimiser3) {
             locate_buffer<3>(kmer_buffer3, offsets3, no_minimiser3, kmer.kmer_value, kmer.kmer_value_rev, left_minimiser_position3, right_minimiser_position3, sequence_begin, sequence_end, positions, found_positions, found_kmers);
         }
-        else if(minimiser3 != current_neg_minimiser3 && (minimiser_rank3 = r3.rank(minimiser3), r3.rank(minimiser3 + 1) - minimiser_rank3)) {
+        else if(minimiser3 != current_neg_minimiser3 && r3.contains(minimiser3, minimiser_rank3)) {
             const size_t minimiser_position3 = s3_select.select(minimiser_rank3);
             no_minimiser3 = s3_select.select(minimiser_rank3+1) - minimiser_position3;
 
