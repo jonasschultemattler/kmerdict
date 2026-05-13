@@ -15,7 +15,7 @@ uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
     for(uint64_t kmer : kmers) {
         const uint64_t kmer_rc = crc(kmer, k);
         minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-        if(minimiser_rank = r1.rank(minimiser); r1.rank(minimiser + 1) - minimiser_rank) {
+        if(r1.contains(minimiser, minimiser_rank)) {
             size_t p = s1_select.select(minimiser_rank);
             size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
             occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
@@ -41,14 +41,14 @@ uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
     for(uint64_t kmer : kmers) {
         const uint64_t kmer_rc = crc(kmer, k);
         minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-        if(minimiser_rank = r1.rank(minimiser); r1.rank(minimiser + 1) - minimiser_rank) {
+        if(r1.contains(minimiser, minimiser_rank)) {
             size_t p = s1_select.select(minimiser_rank);
             size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
             occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
         else {
             minimiser = find_minimiser<2>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-            if(minimiser_rank = r2.rank(minimiser); r2.rank(minimiser + 1) - minimiser_rank) {
+            if(r2.contains(minimiser, minimiser_rank)) {
                 size_t p = s2_select.select(minimiser_rank);
                 size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
                 occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
@@ -76,21 +76,21 @@ uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
         const uint64_t kmer_rc = crc(kmer, k);
         minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
 
-        if(minimiser_rank = r1.rank(minimiser); r1.rank(minimiser + 1) - minimiser_rank) {
+        if(r1.contains(minimiser, minimiser_rank)) {
             size_t p = s1_select.select(minimiser_rank);
             size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
             occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
         else {
             minimiser = find_minimiser<2>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-            if(minimiser_rank = r2.rank(minimiser); r2.rank(minimiser + 1) - minimiser_rank) {
+            if(r2.contains(minimiser, minimiser_rank)) {
                 size_t p = s2_select.select(minimiser_rank);
                 size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
                 occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
             }
             else {
                 minimiser = find_minimiser<3>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-                if(minimiser_rank = r3.rank(minimiser); r3.rank(minimiser + 1) - minimiser_rank) {
+                if(r3.contains(minimiser, minimiser_rank)) {
                     size_t p = s3_select.select(minimiser_rank);
                     size_t no_minimiser = s3_select.select(minimiser_rank+1) - p;
                     occurences += check<3>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
