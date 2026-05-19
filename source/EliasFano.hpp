@@ -358,11 +358,10 @@ template <util::AllocType AT = util::AllocType::MALLOC> class EliasFano : public
             	if (candidate_lower < x_lower)
                 	break;
         	}
-        	else {
+        	else
             	break;
-        	}
-
-    	} while (true);
+    	}
+		while (true);
 
     	rank_out = ++rank;
 

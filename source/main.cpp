@@ -26,31 +26,35 @@ struct cmd_arguments {
     std::filesystem::path q{};
     std::filesystem::path d{};
     uint8_t k{31};
-    uint8_t l{2};
+    uint8_t level{2};
     uint8_t m1{18};
     uint8_t m2{21};
     uint8_t m3{23};
     uint8_t t1{64};
     uint8_t t2{64};
     uint16_t t3{64};
+    uint16_t t{1000};
     uint32_t shape{std::numeric_limits<uint32_t>::max()};
     bool loc{false};
 };
 
-void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args) {
+void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
+{
     parser.add_positional_option(args.cmd, sharg::config{.description = "command options: build, lookup, locate, bench"});
     parser.add_option(args.i, sharg::config{.short_id = 'i', .long_id = "input", .description = "provide input file"});
     parser.add_option(args.q, sharg::config{.short_id = 'q', .long_id = "query", .description = "provide query file"});
     parser.add_option(args.d, sharg::config{.short_id = 'd', .long_id = "dict", .description = "provide dict file"});
     parser.add_option(args.k, sharg::config{.short_id = 'k', .long_id = "k-mer", .description = "k-mer length"});
-    parser.add_option(args.l, sharg::config{.short_id = 'l', .long_id = "level", .description = "no level"});
+    parser.add_option(args.level, sharg::config{.long_id = "level", .description = "no level"});
     parser.add_option(args.m1, sharg::config{.long_id = "m1", .description = "minimiser1 length"});
     parser.add_option(args.m2, sharg::config{.long_id = "m2", .description = "minimiser2 length"});
     parser.add_option(args.m3, sharg::config{.long_id = "m3", .description = "minimiser3 length"});
     parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
+    parser.add_option(args.t, sharg::config{.short_id = 't', .description = "threshold"});
     parser.add_option(args.shape, sharg::config{.long_id = "shape", .description = "shape value"});
+    parser.add_flag(args.loc, sharg::config{.long_id = "loc", .description = "enable locate"});
 }
 
 int check_arguments(sharg::parser &parser, cmd_arguments &args) {
@@ -61,8 +65,6 @@ int check_arguments(sharg::parser &parser, cmd_arguments &args) {
             throw sharg::user_input_error("provide input file.");
         if(!parser.is_option_set('k'))
             throw sharg::user_input_error("specify k");
-        if(!parser.is_option_set('l'))
-            throw sharg::user_input_error("specify level");
     }
     else if(args.cmd == "lookup") {
         if(!parser.is_option_set('q'))
@@ -116,7 +118,7 @@ int main(int argc, char** argv)
         load_file(args.i, text);
 
         std::cout << "building dict...\n";
-        RSHash index = RSHash(args.k, args.l, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.shape);
+        RSHash index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, args.shape);
         index.build(text);
         index.save(args.d);
     }
@@ -163,6 +165,11 @@ int main(int argc, char** argv)
         RSHash index = RSHash();
         index.load(args.d);
 
+        if(!index.has_locate()) {
+            std::cerr << "index does not support locate\n";
+            return -1;
+        }
+
         std::cout << "locating...\n";
         // std::vector<std::pair<uint64_t, bool>> all_positions(queries.size() * max_query_length * index.getmaxmthres());
         // std::vector<std::pair<uint64_t, bool>> all_positions;
@@ -205,6 +212,7 @@ int main(int argc, char** argv)
 
         std::cout << "bench pos lookup...\n";
         double error = 0.0;
+        std::vector<double> times;
         double lookup_time_sum = 0.0;
         int round = 0;
         std::chrono::high_resolution_clock::time_point t_start, t_stop;
@@ -220,18 +228,22 @@ int main(int argc, char** argv)
             lookup_time_sum += ns_per_kmer;
             round++;
             error += std::abs((lookup_time_sum/round) - ns_per_kmer);
+            times.push_back(ns_per_kmer);
             std::cout << "round " << round << " found " << found << " time per kmer: " << ns_per_kmer << ", avg: " << (lookup_time_sum/round) << ", error: " << error/round << '\n';
         }
 
         std::cout << "==== positive lookup:\n";
         std::cout << "num_kmers = " << kmers.size() << '\n';
         std::cout << "num_positive_kmers = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
-        std::cout << "pos_time_per_kmer = " << lookup_time_sum/round << '\n';
+        // std::cout << "pos_time_per_kmer = " << lookup_time_sum/round << '\n';
+        std::cout << "pos_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
+        std::cout << "pos_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
 
         std::cout << "bench neg lookup...\n";
         round = 0;
         error = 0.0;
         lookup_time_sum = 0.0;
+        times.clear();
 
         while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
             kmers = rand_kmers(1000000, index.getk());
@@ -243,13 +255,16 @@ int main(int argc, char** argv)
             lookup_time_sum += ns_per_kmer;
             round++;
             error += std::abs((lookup_time_sum/round) - ns_per_kmer);
+            times.push_back(ns_per_kmer);
             std::cout << "round " << round << " time per kmer: " << ns_per_kmer << ", avg: " << (lookup_time_sum/round) << ", error: " << error/round << '\n';
         }
 
         std::cout << "==== negative lookup:\n";
         std::cout << "num_kmers = " << kmers.size() << '\n';
         std::cout << "num_negative_kmers = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
-        std::cout << "neg_time_per_kmer = " << ns_per_kmer << '\n';
+        // std::cout << "neg_time_per_kmer = " << ns_per_kmer << '\n';
+        std::cout << "neg_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
+        std::cout << "neg_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)) ; }) / times.size()) << '\n';
     }
  
     return 0;

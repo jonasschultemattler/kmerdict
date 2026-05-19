@@ -75,10 +75,11 @@ class RSHash
 {
 private:
     uint64_t level;
-    uint64_t k, m1, m_thres1, m2, m_thres2, m3, m_thres3;
+    uint64_t k, m1, m_thres1, m2, m_thres2, m3, m_thres3, threshold;
     uint64_t span1, span2, span3;
     uint64_t kmermask, mmermask1, mmermask2, mmermask3;
     uint32_t shape;
+    bool loc;
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
     uint64_t no_text_kmers;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> r1, r2, r3;
@@ -86,7 +87,7 @@ private:
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
     // std::vector<uint32_t> offsets1, offsets2, offsets3;
-    // gtl::flat_hash_set<uint64_t> hashmap;
+    gtl::flat_hash_set<uint64_t> hashset;
     gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
@@ -147,9 +148,9 @@ public:
         m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
     {}
     RSHash(uint8_t const k, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
-            uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint32_t const shape)
+            uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, uint32_t const shape)
         : k(k), level(level), m1(m1), m2(m2), m3(m3),
-        m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), shape(shape),
+        m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc), shape(shape),
         span1(k-m1+1), span2(k-m2+1), span3(k-m3+1),
         endpoints(std::vector<uint64_t>{}, 1),
         r1(std::vector<uint64_t>{}, 1),
@@ -162,10 +163,10 @@ public:
         mmermask3(compute_mask(2u * m3))
     {}
     uint8_t getk() { return k; }
+    bool has_locate() { return loc; }
     uint8_t getmaxmthres() { return std::max({m_thres1, m_thres2, m_thres3}); }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
-    // std::vector<uint64_t> rand_text_kmers(const uint64_t);
     const inline uint64_t access(const uint64_t, const size_t);
     uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
@@ -185,6 +186,11 @@ public:
         const uint64_t no_skmers2 = s2.size();
         const uint64_t no_minimizers3 = r3.rank(M3);
         const uint64_t no_skmers3 = s3.size();
+        size_t ht_space;
+        if(loc)
+            ht_space = hashmap.capacity()*(sizeof(uint64_t) + sizeof(uint32_t) + 1)*8;
+        else
+            ht_space = hashmap.capacity()*(sizeof(uint64_t) + 1)*8;
 
         std::cout << "====== report ======\n";
         std::cout << "text length: " << N << "\n";
@@ -213,7 +219,7 @@ public:
         std::cout << "offsets1: " << (double) no_skmers1*offset_width/no_text_kmers << "\n";
         std::cout << "offsets2: " << (double) no_skmers2*offset_width/no_text_kmers << "\n";
         std::cout << "offsets3: " << (double) no_skmers3*offset_width/no_text_kmers << "\n";
-        std::cout << "Hashtable: " << (double) hashmap.capacity()*(sizeof(uint64_t) + 1)*8/no_text_kmers << "\n";
+        std::cout << "Hashtable: " << (double) ht_space/no_text_kmers << "\n";
         std::cout << "R_1: " << (double) r1.bitCount()/no_text_kmers << "\n";
         std::cout << "R_2: " << (double) r2.bitCount()/no_text_kmers << "\n";
         std::cout << "R_3: " << (double) r3.bitCount()/no_text_kmers << "\n";
@@ -221,7 +227,7 @@ public:
         std::cout << "S_2: " << (double) (no_skmers2+1)/no_text_kmers << "\n";
         std::cout << "S_3: " << (double) (no_skmers3+1)/no_text_kmers << "\n";
     
-        std::cout << "total: " << (double) (no_skmers1*offset_width+no_skmers2*offset_width+no_skmers3*offset_width+2*N+r1.bitCount()+r2.bitCount()+r3.bitCount()+no_skmers1+1+s1_select.bitCount()+no_skmers2+1+s2_select.bitCount()+no_skmers3+1+s3_select.bitCount()+endpoints.bitCount()+65*hashmap.bucket_count())/no_text_kmers << "\n";
+        std::cout << "total: " << (double) (no_skmers1*offset_width+no_skmers2*offset_width+no_skmers3*offset_width+2*N+r1.bitCount()+r2.bitCount()+r3.bitCount()+no_skmers1+1+s1_select.bitCount()+no_skmers2+1+s2_select.bitCount()+no_skmers3+1+s3_select.bitCount()+endpoints.bitCount()+ht_space)/no_text_kmers << "\n";
     }
     std::vector<uint64_t> rand_text_kmers(const uint64_t n)
     {

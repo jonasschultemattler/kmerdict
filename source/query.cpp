@@ -21,7 +21,7 @@ uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
             occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
         else
-            occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+            occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
     }
 
     delete[] offsets;
@@ -54,7 +54,7 @@ uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
                 occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
             }
             else
-                occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+                occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
         }
     }
 
@@ -96,7 +96,7 @@ uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
                     occurences += check<3>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
                 }
                 else
-                    occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+                    occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
             }
         }
     }
@@ -490,7 +490,7 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
                 current_minimiser1 = minimiser1;
             }    
             else {
-                occurences += hashmap.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+                occurences += hashset.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
                 found = false;
                 current_neg_minimiser1 = minimiser1;
             }
@@ -583,7 +583,7 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
                     current_neg_minimiser1 = minimiser1;
                 }   
                 else {
-                    occurences += hashmap.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+                    occurences += hashset.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
                     found = false;
                     current_neg_minimiser1 = minimiser1;
                     current_neg_minimiser2 = minimiser2;
@@ -713,7 +713,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                         current_neg_minimiser2 = minimiser2;
                     }
                     else {
-                        occurences += hashmap.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
+                        occurences += hashset.contains(std::min<uint64_t>(window.kmer_value, window.kmer_value_rev));
                         found = false;
                         current_neg_minimiser1 = minimiser1;
                         current_neg_minimiser2 = minimiser2;
@@ -749,23 +749,25 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset
     else if constexpr (level == 3)
         span = span3;
 
+    bool found = false;
+
     if(buffer[s+minimiser_pos] == kmerrc) {
         const uint64_t text_pos = offset + minimiser_pos;
-        // if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
             // positions[i++] = {text_pos, true};
             i++;
-            return true;
-        // }
+            found = true;
+        }
     }
     if(buffer[s+span-1-minimiser_pos] == kmer) {
         const uint64_t text_pos = offset + span-1-minimiser_pos + k - 1;
-        // if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
             // positions[i++] = {text_pos, false};
             i++;
-            return true;
-        // }
+            found = true;
+        }
     }
-    return false;
+    return found;
 }
 
 template<int level>
@@ -782,40 +784,42 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offse
         span = span2;
     else if constexpr (level == 3)
         span = span3;
+
+    bool found = false;
     
     if(buffer[s+left_minimiser_pos] == kmerrc) {
         const uint64_t text_pos = offset + left_minimiser_pos;
-        // if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
             // positions[i++] = {text_pos, true};
             i++;
-            return true;
-        // }
+            found = true;
+        }
     }
     if(buffer[s+span-1-left_minimiser_pos] == kmer) {
         const uint64_t text_pos = offset + span-1-left_minimiser_pos + k - 1;
-        // if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
             // positions[i++] = {text_pos, false};
             i++;
-            return true;
-        // }
+            found = true;
+        }
     }
     if(buffer[s+right_minimiser_pos] == kmer) {
         const uint64_t text_pos = offset + right_minimiser_pos + k - 1;
-        // if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
+        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos)) {
             // positions[i++] = {text_pos, true};
             i++;
-            return true;
-        // }
+            found = true;
+        }
     }
     if(buffer[s+span-1-right_minimiser_pos] == kmerrc) {
         const uint64_t text_pos = offset + span-1-right_minimiser_pos;
-        // if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
+        if(check_overlap<level>(offset, text_pos, start_pos, end_pos)) {
             // positions[i++] = {text_pos, false};
             i++;
-            return true;
-        // }
+            found = true;
+        }
     }
-    return false;
+    return found;
 }
 
 template<int level>
