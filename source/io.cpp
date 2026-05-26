@@ -48,6 +48,29 @@ void load(Archive& ar, gtl::flat_hash_map<uint64_t, uint64_t>& map) {
     }
 }
 
+template <class Archive>
+void save(Archive& ar, const gtl::flat_hash_map<uint64_t, std::vector<uint32_t>>& map) {
+    ar(static_cast<std::size_t>(map.size()));
+    for (const auto& [key, val] : map) {
+        ar(key, val);
+    }
+}
+
+template <class Archive>
+void load(Archive& ar, gtl::flat_hash_map<uint64_t, std::vector<uint32_t>>& map) {
+    std::size_t size;
+    ar(size);
+    map.clear();
+    map.reserve(size);
+    for (std::size_t i = 0; i < size; ++i) {
+        uint64_t key;
+        std::vector<uint32_t> val;
+        ar(key, val);
+        map.emplace(key, val);
+    }
+}
+
+
 } // namespace cereal
 
 

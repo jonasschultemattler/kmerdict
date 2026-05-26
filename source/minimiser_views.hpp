@@ -1060,3 +1060,20 @@ inline constexpr auto kmerview = rshash::detail::kmerview_fn{};
 
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

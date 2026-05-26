@@ -33,7 +33,7 @@ struct cmd_arguments {
     uint8_t t1{64};
     uint8_t t2{64};
     uint16_t t3{64};
-    uint16_t t{1000};
+    uint16_t t{0};
     uint32_t shape{std::numeric_limits<uint32_t>::max()};
     bool loc{false};
 };

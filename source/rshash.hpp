@@ -71,6 +71,7 @@ struct RadixTraitsMinimizer64 {
 #ifndef RSHASH_HPP
 #define RSHASH_HPP
 
+
 class RSHash
 {
 private:
@@ -88,7 +89,9 @@ private:
     bits::compact_vector offsets1, offsets2, offsets3;
     // std::vector<uint32_t> offsets1, offsets2, offsets3;
     gtl::flat_hash_set<uint64_t> hashset;
-    gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
+    // gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
+    // gtl::flat_hash_map<uint64_t, bits::compact_vector> hashmap;
+    gtl::flat_hash_map<uint64_t, std::vector<uint32_t>> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level, typename MinimizerT>
@@ -102,7 +105,7 @@ private:
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
     size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
-    void fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &, const size_t);
+    void fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
@@ -132,11 +135,11 @@ private:
     uint64_t lookup2(const std::vector<uint64_t>&);
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<int level>
-    inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level>
-    inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level>
-    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, uint64_t &, uint64_t &, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
+    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
 
 
 
@@ -187,10 +190,15 @@ public:
         const uint64_t no_minimizers3 = r3.rank(M3);
         const uint64_t no_skmers3 = s3.size();
         size_t ht_space;
-        if(loc)
-            ht_space = hashmap.capacity()*(sizeof(uint64_t) + sizeof(uint32_t) + 1)*8;
+        if(loc) {
+            // ht_space = hashmap.capacity()*(sizeof(uint64_t) + sizeof(uint32_t) + 1)*8;
+            size_t total = sizeof(hashmap) +  hashmap.capacity()*sizeof(decltype(hashmap)::value_type);
+            for (const auto& [k, vec] : hashmap)
+                total += vec.capacity() * sizeof(uint32_t);
+            ht_space = total*8;
+        }
         else
-            ht_space = hashmap.capacity()*(sizeof(uint64_t) + 1)*8;
+            ht_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8;
 
         std::cout << "====== report ======\n";
         std::cout << "text length: " << N << "\n";
@@ -276,6 +284,148 @@ const inline uint64_t RSHash::get_base(uint64_t pos) {
 
 const inline uint64_t RSHash::access(const uint64_t unitig_id, const size_t offset) {
     return get_word64(offset) & kmermask;
+}
+
+
+template<int level>
+inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, size_t N, const uint64_t shift)
+{
+    uint64_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    for(size_t i = 0; i < N; i++) {
+        if constexpr (level == 1)
+            offsets[i] = offsets1.access(p+i) + 1 - span;
+        if constexpr (level == 2)
+            offsets[i] = offsets2.access(p+i) + 1 - span;
+        if constexpr (level == 3)
+            offsets[i] = offsets3.access(p+i) + 1 - span;
+    }
+
+    for(uint64_t i = 0; i < N; i++) {
+        const uint64_t s = offsets[i];
+
+        uint64_t kmer = get_word64(s) & kmermask;
+        uint64_t bits = get_word64(s + k);
+        *buffer++ = kmer;
+        for(uint64_t j=0; j < span-1; j++) {
+            uint64_t const next_base = bits & 3ULL;
+            bits >>= 2;
+            kmer = (kmer >> 2) | (next_base << shift);
+            *buffer++ = kmer;
+        }
+
+    }
+}
+
+template<int level>
+inline bool RSHash::check_overlap(uint64_t skmer_pos, uint64_t text_pos, uint64_t &start_pos, uint64_t &end_pos)
+{
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    const uint64_t r = endpoints.rank(skmer_pos+span);
+    start_pos = endpoints.select(r-1, &end_pos);
+
+    return text_pos >= start_pos && text_pos+k-1 < end_pos;
+}
+
+
+template<int level>
+inline uint64_t RSHash::find_minimiser(const uint64_t kmer, const uint64_t kmer_rc, size_t &left_minimiser_position, size_t &right_minimiser_position)
+{
+    uint64_t m, mmermask;
+    mixer_64 m_hasher;
+    if constexpr (level == 1) {
+        m = m1;
+        mmermask = mmermask1;
+        m_hasher = m_hasher1;
+    }
+    if constexpr (level == 2) {
+        m = m2;
+        mmermask = mmermask2;
+        m_hasher = m_hasher2;
+    }
+    if constexpr (level == 3) {
+        m = m3;
+        mmermask = mmermask3;
+        m_hasher = m_hasher3;
+    }
+
+    uint64_t mmer = kmer >> 2*(k - m);
+    uint64_t mmer_rc = kmer_rc & mmermask;
+    uint64_t minimiser = std::min<uint64_t>(m_hasher.hash(mmer) & mmermask, m_hasher.hash(mmer_rc) & mmermask);
+    left_minimiser_position = k-m;
+    right_minimiser_position = 0;
+
+    for (size_t i = 1; i <= k-m; ++i) {
+        mmer = (kmer >> 2*(k-m-i)) & mmermask;
+        mmer_rc = (kmer_rc >> 2*i) & mmermask;
+        const uint64_t mmerhash = std::min<uint64_t>(m_hasher.hash(mmer) & mmermask, m_hasher.hash(mmer_rc) & mmermask);
+        if(mmerhash < minimiser) {
+            minimiser = mmerhash;
+            left_minimiser_position = k-m-i;
+            right_minimiser_position = i;
+        }
+        else if(mmerhash == minimiser)
+            left_minimiser_position = k-m-i;
+    }
+
+    return minimiser;
+}
+
+template<int level>
+inline void RSHash::update_minimiser(const uint64_t kmer, const uint64_t kmer_rc, uint64_t &minimiser, size_t &left_minimiser_position, size_t &right_minimiser_position)
+{
+    uint64_t m, mmermask;
+    mixer_64 m_hasher;
+    if constexpr (level == 1) {
+        m = m1;
+        mmermask = mmermask1;
+        m_hasher = m_hasher1;
+    }
+    if constexpr (level == 2) {
+        m = m2;
+        mmermask = mmermask2;
+        m_hasher = m_hasher2;
+    }
+    if constexpr (level == 3) {
+        m = m3;
+        mmermask = mmermask3;
+        m_hasher = m_hasher3;
+    }
+
+    if(left_minimiser_position-- == 0) {
+        minimiser = find_minimiser<level>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+        return;
+    }
+
+    const uint64_t mmer = kmer >> 2*(k - m);
+    const uint64_t mmer_rc = kmer_rc & mmermask;
+    const uint64_t mmerhash = std::min<uint64_t>(m_hasher.hash(mmer) & mmermask, m_hasher.hash(mmer_rc) & mmermask);
+
+    if(mmerhash < minimiser) {
+        minimiser = mmerhash;
+        left_minimiser_position = k - m;
+        right_minimiser_position = 0;
+        return;
+    }
+    if(mmerhash == minimiser) {
+        right_minimiser_position = 0;
+        return;
+    }
+
+    right_minimiser_position++;
 }
 
 #endif

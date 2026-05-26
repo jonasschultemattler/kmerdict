@@ -260,7 +260,7 @@ size_t RSHash::get_frequent_skmers(
                 break;
             }
             for(auto && minimiser : skmer_view | skmerview) {
-                cur_freq = r.rank(minimiser.minimiser_value+1)-r.rank(minimiser.minimiser_value);
+                cur_freq = r.contains(minimiser.minimiser_value, minimiser_rank);
                 if(freq && !cur_freq)
                     start = minimiser.range_position;
                 if(!freq && cur_freq) {
@@ -277,6 +277,47 @@ size_t RSHash::get_frequent_skmers(
     }
 
     return freq_kmers;
+}
+
+
+void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& input, const std::vector<SkmerInfo> &freq_skmers)
+{
+    if(threshold > 0) {
+        gtl::flat_hash_map<uint64_t, uint16_t> kmer_counts; // threshold <= 2^16
+        for(const auto & skmer_info : freq_skmers) {
+            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
+            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k})) {
+                const uint64_t canonical_kmer = std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev);
+                uint16_t count = kmer_counts[canonical_kmer];
+                if(count < threshold)
+                    kmer_counts[canonical_kmer]++;
+            }
+        }
+        for(const auto & skmer_info : freq_skmers) {
+            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
+            const uint32_t skmer_pos = endpoints.select(skmer_info.seq_id+1) + skmer_info.start;
+            uint32_t p = 0;
+            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k})) {
+                const uint64_t canonical_kmer = std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev);
+                if(kmer_counts[canonical_kmer] < threshold) 
+                    hashmap[canonical_kmer].push_back(skmer_pos + p);
+                p++;
+            }
+        }
+    }
+    else {
+        for(const auto & skmer_info : freq_skmers) {
+            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
+            const uint32_t skmer_pos = endpoints.select(skmer_info.seq_id+1) + skmer_info.start;
+            uint32_t p = 0;
+            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k})) {
+                const uint64_t canonical_kmer = std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev);
+                hashmap[canonical_kmer].push_back(skmer_pos + p);
+                p++;
+            }
+        }
+    }
+    
 }
 
 
@@ -362,17 +403,8 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
     }
 
     std::cout << "build HT...\n";
-    if(loc) {
-        // fill_ht(freq_skmers, threshold);
-        for(const auto & skmer_info : freq_skmers) {
-            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k})) {
-                hashmap[std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev)]++;
-                // hashmap[kmer.kmer_value]++;
-                // hashmap[kmer.kmer_value_rev]++;
-            }
-        }
-    }
+    if(loc)
+        fill_ht(input, freq_skmers);
     else {
         for(const auto & skmer_info : freq_skmers) {
             auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);

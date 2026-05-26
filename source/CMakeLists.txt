@@ -1,4 +1,4 @@
-add_executable (rshash main.cpp query.cpp build.cpp io.cpp)
+add_executable (rshash main.cpp locate.cpp lookup.cpp build.cpp io.cpp)
 target_compile_options(rshash PRIVATE -O3 -march=native -Wno-interference-size)
 target_include_directories(rshash PRIVATE ${CMAKE_SOURCE_DIR}/sux)
 target_compile_definitions(rshash PRIVATE PARSEARCH)
