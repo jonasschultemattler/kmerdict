@@ -6,6 +6,7 @@
 #include "compact_vector.hpp"
 #include "EliasFano.hpp"
 #include "minimiser_views.hpp"
+#include "shape_views.hpp"
 #include "util.hpp"
 
 using namespace seqan3::literals;
@@ -23,23 +24,6 @@ struct SkmerInfo {
     size_t end;
 };
 
-// struct MinimizerInfo32 {
-//     uint64_t minimizer_value;
-//     uint32_t position;
-
-//     bool compare(const MinimizerInfo32 &x, const MinimizerInfo32 &y) {
-//     	return x.minimizer_value < y.minimizer_value;
-//     }
-// };
-
-// struct MinimizerInfo64 {
-//     uint64_t minimizer_value;
-//     uint64_t position;
-
-//     bool compare(const MinimizerInfo64 &x, const MinimizerInfo64 &y) {
-//     	return x.minimizer_value < y.minimizer_value;
-//     }
-// };
 
 typedef std::pair<uint64_t, uint32_t> MinimizerInfo32;
 typedef std::pair<uint64_t, uint64_t> MinimizerInfo64;
@@ -87,23 +71,20 @@ private:
     bit_vector s1, s2, s3;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
-    // std::vector<uint32_t> offsets1, offsets2, offsets3;
     gtl::flat_hash_set<uint64_t> hashset;
-    // gtl::flat_hash_map<uint64_t, uint64_t> hashmap;
-    // gtl::flat_hash_map<uint64_t, bits::compact_vector> hashmap;
     gtl::flat_hash_map<uint64_t, std::vector<uint32_t>> hashmap;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level, typename MinimizerT>
     inline void filter_freq_minimizers(std::vector<MinimizerT> &minimizers,
     std::vector<uint8_t> &counts, size_t &no_minimizers, size_t &no_skmers);
-    template<int level, typename MinimizerT>
+    template<int level, typename MinimizerT, bool shape>
     inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
     template<int level>
     void mark_minimizer_occurences(const size_t, const std::vector<uint8_t> &);
     template<int level>
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
-    template<int level>
+    template<int level, bool shape>
     size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
     void fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
     template<int level>

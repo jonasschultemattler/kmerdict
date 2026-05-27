@@ -316,9 +316,7 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
 
     uint64_t occurences = 0;
     for(auto && window : query | rshash::views::kmerview({.window_size = k}))
-    // for(auto && shape : query | rshash::views::shapeview({.shape = shape}))
     {
-        // if(found && extend_in_text(text_pos, unitig_begin, unitig_end, forward, shape.shape_value_fwd, shape.shape_value_rc)) {
         if(found && extend_in_text(text_pos, unitig_begin, unitig_end, forward, window.kmer_value, window.kmer_value_rev)) {
             occurences++;
             extensions++;
