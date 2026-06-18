@@ -75,24 +75,19 @@ inline void RSHash::filter_freq_minimizers(std::vector<MinimizerT> &minimizers,
 }
 
 
-template<int level, typename MinimizerT, bool use_shape>
+template<int level, typename MinimizerT>
 inline uint64_t RSHash::get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
     const std::vector<SkmerInfo> &skmers,
     std::vector<uint64_t> &unfreq_minimizers, std::vector<uint8_t> &counts)
 {
+    std::cout << std::bitset<64>(shape.value) << ' ' << window_size << " " << k << " " << overlap << " " << m1 << " " << m2 << " " << m3 << "\n";
     auto view = [&]() {
-        if constexpr (level == 1 && !use_shape)
+        if constexpr (level == 1)
             return rshash::views::xor_minimiser_and_positions({.minimiser_size = m1, .window_size = k, .seed=seed1});
-        if constexpr (level == 2 && !use_shape)
+        if constexpr (level == 2)
             return rshash::views::xor_minimiser_and_positions({.minimiser_size = m2, .window_size = k, .seed=seed2});
-        if constexpr (level == 3 && !use_shape)
+        if constexpr (level == 3)
             return rshash::views::xor_minimiser_and_positions({.minimiser_size = m3, .window_size = k, .seed=seed3});
-        if constexpr (level == 1 && use_shape)
-            return rshash::views::shape_minimiser_and_positions({.minimiser_size = m1, .window_size = k, .seed=seed1, .shape=shape});
-        if constexpr (level == 2 && use_shape)
-            return rshash::views::shape_minimiser_and_positions({.minimiser_size = m2, .window_size = k, .seed=seed2, .shape=shape});
-        if constexpr (level == 3 && use_shape)
-            return rshash::views::shape_minimiser_and_positions({.minimiser_size = m3, .window_size = k, .seed=seed3, .shape=shape});
     }();
 
     std::cout << "computing minimizers and positions...\n";
@@ -205,28 +200,18 @@ void RSHash::mark_minimizer_occurences(const size_t no_skmers, const std::vector
 }
 
 
-template<int level, bool use_shape>
+template<int level>
 size_t RSHash::get_frequent_skmers(
     const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &sequences,
     const std::vector<SkmerInfo> &skmers, std::vector<SkmerInfo> &skmers_out)
 {
     auto skmerview = [&]() {
-        if constexpr (use_shape) {
-            if constexpr (level == 1)
-                return rshash::views::shape_minimiser_and_occurencess({.minimiser_size = m1, .window_size = k, .seed = seed1, .shape = shape});
-            if constexpr (level == 2)
-                return rshash::views::shape_minimiser_and_occurencess({.minimiser_size = m2, .window_size = k, .seed = seed2, .shape = shape});
-            if constexpr (level == 3)
-                return rshash::views::shape_minimiser_and_occurencess({.minimiser_size = m3, .window_size = k, .seed = seed3, .shape = shape});
-        }
-        else {
-            if constexpr (level == 1)
-                return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m1, .window_size = k, .seed = seed1});
-            if constexpr (level == 2)
-                return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m2, .window_size = k, .seed = seed2});
-            if constexpr (level == 3)
-                return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m3, .window_size = k, .seed = seed3});
-        }
+        if constexpr (level == 1)
+            return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m1, .window_size = k, .seed = seed1});
+        if constexpr (level == 2)
+            return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m2, .window_size = k, .seed = seed2});
+        if constexpr (level == 3)
+            return rshash::views::xor_minimiser_and_skmer_positions({.minimiser_size = m3, .window_size = k, .seed = seed3});
     }();
 
     auto & r = [&]() -> auto& {
@@ -296,17 +281,24 @@ size_t RSHash::get_frequent_skmers(
     return freq_kmers;
 }
 
-
+template<bool use_shape>
 void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& input,
     const std::vector<SkmerInfo> &freq_skmers)
 {
+    auto view = [&]() {
+        if constexpr (use_shape)
+            return rshash::views::shapeview({.shape = shape.value});
+        else
+            return rshash::views::kmerview({.window_size = k});
+    }();
+
     if(loc) {
         gtl::flat_hash_map<uint64_t, uint16_t> kmer_counts; // threshold <= 2^16
         if(threshold > 0) {
             for(const auto & skmer_info : freq_skmers) {
                 auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-                for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k})) {
-                    const uint64_t canonical_kmer = std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev);
+                for(auto && kmer : skmer | view) {
+                    const uint64_t canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
                     uint16_t count = kmer_counts[canonical_kmer];
                     if(count < threshold)
                         kmer_counts[canonical_kmer]++;
@@ -317,8 +309,8 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
             auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
             const uint32_t skmer_pos = endpoints.select(skmer_info.seq_id+1) + skmer_info.start;
             uint32_t p = 0;
-            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k})) {
-                const uint64_t canonical_kmer = std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev);
+            for(auto && kmer : skmer | view) {
+                const uint64_t canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
                 if(threshold > 0) {
                     if(kmer_counts[canonical_kmer] < threshold)
                         hashmap[canonical_kmer].push_back(skmer_pos + p);
@@ -332,8 +324,8 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
     else {
         for(const auto & skmer_info : freq_skmers) {
             auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = k}))
-                hashset.insert(std::min<uint64_t>(kmer.kmer_value, kmer.kmer_value_rev));
+            for(auto && kmer : skmer | view)
+                hashset.insert(std::min<uint64_t>(kmer.value, kmer.value_rev));
         }
     }
 }
@@ -344,24 +336,15 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
     no_text_kmers = mark_sequences(input, k, endpoints);
     const size_t text_length = endpoints.size();
     const size_t log_text_length = std::bit_width(text_length);
-    const bool use_shape = shape != std::numeric_limits<uint32_t>::max();
 
     std::vector<uint64_t> minimizers1;
     std::vector<uint8_t> minimizers1_occurences;
     std::vector<SkmerInfo> freq_skmers;
     uint64_t no_skmers1;
-    if(log_text_length <= 32) {
-        if(use_shape)
-            no_skmers1 = get_minimizers<1, MinimizerInfo32, true>(input, freq_skmers, minimizers1, minimizers1_occurences);
-        else
-            no_skmers1 = get_minimizers<1, MinimizerInfo32, false>(input, freq_skmers, minimizers1, minimizers1_occurences);
-    }
-    else {
-        if(use_shape)
-            no_skmers1 = get_minimizers<1, MinimizerInfo64, true>(input, freq_skmers, minimizers1, minimizers1_occurences);
-        else
-            no_skmers1 = get_minimizers<1, MinimizerInfo64, false>(input, freq_skmers, minimizers1, minimizers1_occurences);
-    }
+    if(log_text_length <= 32)
+        no_skmers1 = get_minimizers<1, MinimizerInfo32>(input, freq_skmers, minimizers1, minimizers1_occurences);
+    else
+        no_skmers1 = get_minimizers<1, MinimizerInfo64>(input, freq_skmers, minimizers1, minimizers1_occurences);
 
     std::cout << "build R_1...\n";
     const uint64_t M1 = 1ULL << (m1+m1);
@@ -374,10 +357,7 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
 
     std::cout << "get frequent skmers...\n";
     size_t freq_kmers;
-    if(use_shape)
-        freq_kmers = get_frequent_skmers<1, true>(input, freq_skmers, freq_skmers);
-    else
-        freq_kmers = get_frequent_skmers<1, false>(input, freq_skmers, freq_skmers);
+    freq_kmers = get_frequent_skmers<1>(input, freq_skmers, freq_skmers);
 
     if(level > 1)
     {
@@ -385,18 +365,10 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
         std::vector<uint64_t> minimizers2;
         std::vector<uint8_t> minimizers2_occurences;
         uint64_t no_skmers2;
-        if(log_text_length <= 32) {
-            if(use_shape)
-                no_skmers2 = get_minimizers<2, MinimizerInfo32, true>(input, freq_skmers, minimizers2, minimizers2_occurences);
-            else
-                no_skmers2 = get_minimizers<2, MinimizerInfo32, false>(input, freq_skmers, minimizers2, minimizers2_occurences);
-        }
-        else {
-            if(use_shape)
-                no_skmers2 = get_minimizers<2, MinimizerInfo64, true>(input, freq_skmers, minimizers2, minimizers2_occurences);
-            else
-                no_skmers2 = get_minimizers<2, MinimizerInfo64, false>(input, freq_skmers, minimizers2, minimizers2_occurences);
-        }
+        if(log_text_length <= 32)
+            no_skmers2 = get_minimizers<2, MinimizerInfo32>(input, freq_skmers, minimizers2, minimizers2_occurences);
+        else
+            no_skmers2 = get_minimizers<2, MinimizerInfo64>(input, freq_skmers, minimizers2, minimizers2_occurences);
 
         std::cout << "build R_2...\n";
         const uint64_t M2 = 1ULL << (m2+m2);
@@ -409,10 +381,7 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
 
         std::cout << "get frequent skmers...\n";
         std::vector<SkmerInfo> freq_skmers2;
-        if(use_shape)
-            freq_kmers = get_frequent_skmers<2, true>(input, freq_skmers, freq_skmers2);
-        else
-            freq_kmers = get_frequent_skmers<2, false>(input, freq_skmers, freq_skmers2);
+        freq_kmers = get_frequent_skmers<2>(input, freq_skmers, freq_skmers2);
         freq_skmers.clear();
         freq_skmers = freq_skmers2;
     }
@@ -423,18 +392,10 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
         std::vector<uint64_t> minimizers3;
         std::vector<uint8_t> minimizers3_occurences;
         uint64_t no_skmers3;
-        if(log_text_length <= 32) {
-            if(use_shape)
-                no_skmers3 = get_minimizers<3, MinimizerInfo32, true>(input, freq_skmers, minimizers3, minimizers3_occurences);
-            else
-                no_skmers3 = get_minimizers<3, MinimizerInfo32, false>(input, freq_skmers, minimizers3, minimizers3_occurences);
-        }
-        else {
-            if(use_shape)
-                no_skmers3 = get_minimizers<3, MinimizerInfo64, true>(input, freq_skmers, minimizers3, minimizers3_occurences);
-            else
-                no_skmers3 = get_minimizers<3, MinimizerInfo64, false>(input, freq_skmers, minimizers3, minimizers3_occurences);
-        }
+        if(log_text_length <= 32)
+            no_skmers3 = get_minimizers<3, MinimizerInfo32>(input, freq_skmers, minimizers3, minimizers3_occurences);
+        else
+            no_skmers3 = get_minimizers<3, MinimizerInfo64>(input, freq_skmers, minimizers3, minimizers3_occurences);
 
         std::cout << "build R_3...\n";
         const uint64_t M3 = 1ULL << (m3+m3);
@@ -447,16 +408,16 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
 
         std::cout << "get frequent skmers...\n";
         std::vector<SkmerInfo> freq_skmers3;
-        if(use_shape)
-            freq_kmers = get_frequent_skmers<3, true>(input, freq_skmers, freq_skmers3);
-        else
-            freq_kmers = get_frequent_skmers<3, false>(input, freq_skmers, freq_skmers3);
+        freq_kmers = get_frequent_skmers<3>(input, freq_skmers, freq_skmers3);
         freq_skmers.clear();
         freq_skmers = freq_skmers3;
     }
 
     std::cout << "build HT...\n";
-    fill_ht(input, freq_skmers);
+    if(shape.value != std::numeric_limits<uint32_t>::max())
+        fill_ht<true>(input, freq_skmers);
+    else
+        fill_ht<false>(input, freq_skmers);
 
     std::cout << "copy text...\n";
     text = pack_dna4_to_uint64(input);

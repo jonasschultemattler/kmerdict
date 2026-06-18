@@ -1,3 +1,4 @@
+#include <bitset>
 #include <cereal/cereal.hpp>
 #include <cereal/types/vector.hpp>
 #include "rshash.hpp"
@@ -79,7 +80,10 @@ int RSHash::save(const std::filesystem::path &filepath) {
     std::ofstream out(filepath, std::ios::binary);
     cereal::BinaryOutputArchive archive(out);
 
-    archive(k, level, m1, m2, m3, m_thres1, m_thres2, m_thres3, shape, s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashmap);
+    archive(k, shape.value, windowmask, windowshift, window_size, overlap, shape_mask, shape_mask_rev, shift_shape, shift_shape_rev, kernel_mask, kernel_mask_rev,
+        kmermask, mmermask1, mmermask2, mmermask3,
+        level, m1, m2, m3, m_thres1, m_thres2, m_thres3, threshold, span1, span2, span3,
+        s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashmap);
 
     out.close();
     return 0;
@@ -89,24 +93,20 @@ int RSHash::load(const std::filesystem::path &filepath) {
     std::ifstream in(filepath, std::ios::binary);
     cereal::BinaryInputArchive archive(in);
 
-    archive(k, level, m1, m2, m3, m_thres1, m_thres2, m_thres3, shape, s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashmap);
-
-    std::cout << "loaded index...\n";
+    uint32_t shape_value;
+    archive(k, shape_value, windowmask, windowshift, window_size, overlap, shape_mask, shape_mask_rev, shift_shape, shift_shape_rev, kernel_mask, kernel_mask_rev,
+        kmermask, mmermask1, mmermask2, mmermask3,
+        level, m1, m2, m3, m_thres1, m_thres2, m_thres3, threshold, span1, span2, span3,
+        s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashmap);
     in.close();
 
-    this->span1 = k - m1 + 1;
-    this->span2 = k - m2 + 1;
-    this->span3 = k - m3 + 1;
-    this->kmermask = compute_mask(2u * k);
-    this->mmermask1 = compute_mask(2u * m1);
-    this->mmermask2 = compute_mask(2u * m2);
-    this->mmermask3 = compute_mask(2u * m3);
+    this->shape = shape32_create(shape_value);
 
     this->s1_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s1.data()), s1.size(), 3);
     this->s2_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s2.data()), s2.size(), 3);
     this->s3_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s3.data()), s3.size(), 3);
-
-    std::cout << "built rank and select ds...\n";
     
+    std::cout << "loaded index...\n";
+
     return 0;
 }

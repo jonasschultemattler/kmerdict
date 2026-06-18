@@ -63,8 +63,8 @@ int check_arguments(sharg::parser &parser, cmd_arguments &args) {
     if(args.cmd == "build") {
         if(!parser.is_option_set('i'))
             throw sharg::user_input_error("provide input file.");
-        if(!parser.is_option_set('k'))
-            throw sharg::user_input_error("specify k");
+        // if(!parser.is_option_set('k'))
+        //     throw sharg::user_input_error("specify k");
     }
     else if(args.cmd == "lookup") {
         if(!parser.is_option_set('q'))
@@ -118,7 +118,12 @@ int main(int argc, char** argv)
         load_file(args.i, text);
 
         std::cout << "building dict...\n";
-        RSHash index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, args.shape);
+        RSHash index;
+        if(args.shape == std::numeric_limits<uint32_t>::max())
+            index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc);
+        else
+            index = RSHash(args.shape, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc);
+        std::cout << "building dict...\n";
         index.build(text);
         index.save(args.d);
     }
@@ -181,7 +186,10 @@ int main(int argc, char** argv)
         for (auto query : queries) {
             found_kmers += index.streaming_locate(query, positions, all_found_positions);
             // all_positions.insert(all_positions.end(), positions.begin(), positions.begin() + found_positions);
-            kmers += query.size() - index.getk() + 1;
+            if(index.getshape() != std::numeric_limits<uint32_t>::max())
+                kmers += query.size() - bit_length(index.getshape()) + 1;
+            else
+                kmers += query.size() - index.getk() + 1;
         }
         std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);

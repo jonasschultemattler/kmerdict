@@ -9,6 +9,14 @@ static inline constexpr uint64_t compute_mask(uint64_t const size)
         return (uint64_t{1u} << size) - 1u;
 }
 
+static inline constexpr uint64_t compute_mask(unsigned x, unsigned z)
+{
+    assert(x <= z);
+    assert(z < 64);
+
+    return compute_mask(z - x + 1) << x;
+}
+
 static inline constexpr uint64_t crc(uint64_t x, uint64_t k) {
     // assert(k <= 32);
     uint64_t c = ~x;

@@ -9,8 +9,6 @@
 
 #include <seqan3/alphabet/nucleotide/dna4.hpp>
 #include <seqan3/core/range/detail/adaptor_from_functor.hpp>
-#include <seqan3/core/debug_stream.hpp>
-
 
 
 static uint64_t MurmurHash2_64(void const* key, size_t len, uint64_t seed) {
@@ -220,8 +218,8 @@ private:
     uint64_t minimiser_size{};
     uint64_t window_size{};
 
-    uint64_t kmer_value{};
-    uint64_t kmer_value_rev{};
+    uint64_t value{};
+    uint64_t value_rev{};
 
     size_t range_size{};
     size_t range_position{};
@@ -256,8 +254,8 @@ public:
         :
         range_it{it.range_it},
         kmer_mask{it.kmer_mask},
-        kmer_value{it.kmer_value},
-        kmer_value_rev{it.kmer_value_rev},
+        value{it.value},
+        value_rev{it.value_rev},
         range_size{it.range_size},
         range_position{it.range_position},
         current{it.current},
@@ -319,8 +317,8 @@ private:
     void rolling_hash()
     {
         uint64_t const new_rank = seqan3::to_rank(*range_it);
-        kmer_value = (kmer_value >> 2) | new_rank << 2*(minimiser_size-1);
-        kmer_value_rev = ((kmer_value_rev << 2) | new_rank^(0b11)) & kmer_mask;
+        value = (value >> 2) | new_rank << 2*(minimiser_size-1);
+        value_rev = ((value_rev << 2) | new_rank^(0b11)) & kmer_mask;
     }
 
     template <pop_first pop>
@@ -335,7 +333,7 @@ private:
             kmers_in_window.pop_front();
         }
 
-        kmers_in_window.push_back(std::min<uint64_t>(m_hasher.hash(kmer_value) & kmer_mask, m_hasher.hash(kmer_value_rev) & kmer_mask));
+        kmers_in_window.push_back(std::min<uint64_t>(m_hasher.hash(value) & kmer_mask, m_hasher.hash(value_rev) & kmer_mask));
     }
 
     void find_minimisers_in_window()
@@ -364,19 +362,19 @@ private:
         minimisers_in_window = window_size - minimiser_size;
 
         uint64_t new_rank = seqan3::to_rank(*range_it);
-        kmer_value |= new_rank << (2 * (minimiser_size - 1));
-        kmer_value_rev |= new_rank^0b11;
+        value |= new_rank << (2 * (minimiser_size - 1));
+        value_rev |= new_rank^0b11;
         for (size_t i = 1u; i < params.minimiser_size; ++i) {
             ++range_position;
             ++range_it;
             new_rank = seqan3::to_rank(*range_it);
-            kmer_value >>= 2;
-            kmer_value |= new_rank << (2 * (minimiser_size - 1));
-            kmer_value_rev <<= 2;
-            kmer_value_rev |= new_rank^0b11;
+            value >>= 2;
+            value |= new_rank << (2 * (minimiser_size - 1));
+            value_rev <<= 2;
+            value_rev |= new_rank^0b11;
         }
 
-        kmers_in_window.push_back(std::min<uint64_t>(m_hasher.hash(kmer_value) & kmer_mask, m_hasher.hash(kmer_value_rev) & kmer_mask));
+        kmers_in_window.push_back(std::min<uint64_t>(m_hasher.hash(value) & kmer_mask, m_hasher.hash(value_rev) & kmer_mask));
 
         for (size_t i = minimiser_size; i < window_size; ++i)
             next_window<pop_first::no>();
@@ -570,8 +568,8 @@ private:
     range_iterator_t range_it{};
 
     uint64_t kmer_mask{std::numeric_limits<uint64_t>::max()};
-    uint64_t kmer_value{};
-    uint64_t kmer_value_rev{};
+    uint64_t value{};
+    uint64_t value_rev{};
     uint64_t seed{};
     mixer_64 m_hasher;
 
@@ -609,7 +607,7 @@ public:
         :
         range_it{it.range_it},
         kmer_mask{it.kmer_mask},
-        kmer_value{it.kmer_value},
+        value{it.value},
         range_size{it.range_size},
         range_position{it.range_position},
         params{it.params},
@@ -673,8 +671,8 @@ private:
     void rolling_hash()
     {
         uint64_t const new_rank = seqan3::to_rank(*range_it);
-        kmer_value = (kmer_value >> 2) | (new_rank << 2*(minimiser_size-1));
-        kmer_value_rev = ((kmer_value_rev << 2) | new_rank^(0b11)) & kmer_mask;
+        value = (value >> 2) | (new_rank << 2*(minimiser_size-1));
+        value_rev = ((value_rev << 2) | new_rank^(0b11)) & kmer_mask;
     }
 
     template <pop_first pop>
@@ -689,8 +687,8 @@ private:
             kmer_values_in_window.pop_front();
         }
 
-        // const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(kmer_value), m_hasher.hash(kmer_value_rev)) & kmer_mask;
-        const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(kmer_value) & kmer_mask, m_hasher.hash(kmer_value_rev) & kmer_mask);
+        // const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(value), m_hasher.hash(value_rev)) & kmer_mask;
+        const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(value) & kmer_mask, m_hasher.hash(value_rev) & kmer_mask);
 
         kmer_values_in_window.push_back(kmerhash);
     }
@@ -709,19 +707,19 @@ private:
         minimiser_size = params.minimiser_size;
 
         uint64_t new_rank = seqan3::to_rank(*range_it);
-        kmer_value = new_rank << 2*(minimiser_size-1);
-        kmer_value_rev = new_rank^(0b11);
+        value = new_rank << 2*(minimiser_size-1);
+        value_rev = new_rank^(0b11);
         for (size_t i = 1u; i < minimiser_size; ++i) {
             ++range_position;
             ++range_it;
 
             new_rank = seqan3::to_rank(*range_it);
-            kmer_value = (kmer_value >> 2) | (new_rank << 2*(minimiser_size-1));
-            kmer_value_rev = ((kmer_value_rev << 2) | new_rank^(0b11)) & kmer_mask;
+            value = (value >> 2) | (new_rank << 2*(minimiser_size-1));
+            value_rev = ((value_rev << 2) | new_rank^(0b11)) & kmer_mask;
         }
 
-        // const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(kmer_value), m_hasher.hash(kmer_value_rev)) & kmer_mask;
-        const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(kmer_value) & kmer_mask, m_hasher.hash(kmer_value_rev) & kmer_mask);
+        // const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(value), m_hasher.hash(value_rev)) & kmer_mask;
+        const uint64_t kmerhash = std::min<uint64_t>(m_hasher.hash(value) & kmer_mask, m_hasher.hash(value_rev) & kmer_mask);
         
         kmer_values_in_window.push_back(kmerhash);
 
@@ -828,8 +826,8 @@ struct kmerview_parameters
 
 struct kmerview_result
 {
-    uint64_t kmer_value;
-    uint64_t kmer_value_rev;
+    uint64_t value;
+    uint64_t value_rev;
 };
 
 }
@@ -1003,8 +1001,8 @@ private:
     void rolling_hash()
     {
         uint64_t const new_rank = seqan3::to_rank(*range_it);
-        current.kmer_value = (current.kmer_value >> 2) | (new_rank << 2*(window_size-1));
-        current.kmer_value_rev = ((current.kmer_value_rev << 2) | (new_rank^0b11)) & kmer_mask;
+        current.value = (current.value >> 2) | (new_rank << 2*(window_size-1));
+        current.value_rev = ((current.value_rev << 2) | (new_rank^0b11)) & kmer_mask;
     }
 
     void init(kmerview_parameters const & params)
@@ -1012,8 +1010,8 @@ private:
         window_size = params.window_size;
 
         uint64_t new_rank = seqan3::to_rank(*range_it);
-        current.kmer_value = (current.kmer_value >> 2) | (new_rank << 2*(window_size-1));
-        current.kmer_value_rev = ((current.kmer_value_rev << 2) | (new_rank^0b11)) & kmer_mask;
+        current.value = new_rank << 2*(window_size-1);
+        current.value_rev = new_rank^0b11;
         for (size_t i = 1u; i < params.window_size; ++i) {
             ++range_position;
             ++range_it;
