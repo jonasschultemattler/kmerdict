@@ -96,20 +96,26 @@ private:
     template<int level>
     inline bool check(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
     template<int level, bool use_shape>
-    inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t, const uint64_t);
+    inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t);
+    template<int level, bool use_shape>
+    inline void fill_buffer2(uint64_t *, uint64_t *, uint64_t *, size_t, size_t);
     template<int level>
     inline bool check_overlap(uint64_t, uint64_t, uint64_t &, uint64_t &);
-    template<int level>
-    inline bool check_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &);
-    template<int level>
-    inline bool check_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &);
-    template<int level>
-    inline bool lookup_buffer(uint64_t *, uint64_t *, const size_t, const uint64_t,  const uint64_t, uint64_t &, const size_t, const size_t, bool &, uint64_t &, uint64_t &);
-    inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t);
+    template<int level, bool use_shape>
+    inline bool check_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    template<int level, bool use_shape>
+    inline bool check_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    template<int level, bool use_shape>
+    inline bool lookup_buffer(uint64_t *, uint64_t *, const size_t, const uint64_t,  const uint64_t, uint64_t &, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    template<bool use_shape>
+    inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t, uint64_t&, uint64_t&);
     const inline uint64_t get_word64(uint64_t pos);
     const inline uint64_t get_base(uint64_t pos);
+    template<bool use_shape>
     uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    template<bool use_shape>
     uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
+    template<bool use_shape>
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     template<bool use_shape>
     size_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
@@ -125,7 +131,13 @@ private:
     template<int level, bool use_shape>
     inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level, bool use_shape>
+    inline bool report_minimiser_pos3(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
+    template<int level, bool use_shape>
+    inline bool report_minimiser_pos4(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
+    template<int level, bool use_shape>
     inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
+    template<int level, bool use_shape>
+    inline void locate_buffer2(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
 
 public:
     RSHash() : endpoints(std::vector<uint64_t>{}, 1),
@@ -289,7 +301,7 @@ const inline uint64_t RSHash::access(const uint64_t unitig_id, const size_t offs
 
 
 template<int level, bool use_shape>
-inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, size_t N, const uint64_t shift)
+inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, size_t N)
 {
     uint64_t span;
     if constexpr (level == 1)
@@ -324,7 +336,56 @@ inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, s
         for(uint64_t j=s; j < e; j++) {
             uint64_t const next_base = bits & 3ULL;
             bits >>= 2;
-            window = (window >> 2) | (next_base << shift);
+            window = (window >> 2) | (next_base << windowshift);
+            *buffer++ = window;
+        }
+
+    }
+}
+
+template<int level, bool use_shape>
+inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *endpositions, size_t p, size_t N)
+{
+    uint64_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    for(size_t i = 0; i < N; i++) {
+        if constexpr (level == 1)
+            offsets[i] = offsets1.access(p+i) + 1 - span;
+        if constexpr (level == 2)
+            offsets[i] = offsets2.access(p+i) + 1 - span;
+        if constexpr (level == 3)
+            offsets[i] = offsets3.access(p+i) + 1 - span;
+    }
+
+    for(uint64_t i = 0; i < N; i++) {
+        uint64_t next_endpoint;
+        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i]+span)-1, &next_endpoint);
+        endpositions[2*i+1] = next_endpoint;
+    }
+    
+    for(uint64_t i = 0; i < N; i++) {
+        uint64_t s = offsets[i];
+        uint64_t e = s + span-1;
+
+        if constexpr (use_shape) {
+            s -= overlap;
+            e += overlap;
+        }
+            
+        uint64_t window = get_word64(s) & windowmask;
+        uint64_t bits = get_word64(s + window_size); // assert span + 2*overlap <= 32
+        
+        *buffer++ = window;
+        for(uint64_t j=s; j < e; j++) {
+            uint64_t const next_base = bits & 3ULL;
+            bits >>= 2;
+            window = (window >> 2) | (next_base << windowshift);
             *buffer++ = window;
         }
 
