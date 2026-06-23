@@ -127,17 +127,11 @@ private:
     uint64_t lookup2(const std::vector<uint64_t>&);
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos3(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
-    template<int level, bool use_shape>
-    inline bool report_minimiser_pos4(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
-    template<int level, bool use_shape>
-    inline void locate_buffer(uint64_t*, uint64_t*, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
-    template<int level, bool use_shape>
-    inline void locate_buffer2(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
+    inline void locate_buffer(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
 
 public:
     RSHash() : endpoints(std::vector<uint64_t>{}, 1),
