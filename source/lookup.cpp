@@ -175,14 +175,14 @@ inline bool RSHash::extend_in_text(uint64_t &text_pos, uint64_t start, uint64_t 
                 return _pext_u64(window, shape_mask) == query;
             }
             else
-                return new_rank == (query >> (2*(k-1)));
+                return new_rank == (query >> windowshift);
         }
     }
     else {
         if(--text_pos >= start) {
             const uint64_t new_rank = get_base(text_pos);
             if constexpr (use_shape) {
-                // window_rev = ((window_rev << 2) | (new_rank^0b11)) & windowmask; // no & ?
+                // window_rev = ((window_rev << 2) | (new_rank^0b11)) & windowmask;
                 window_rev = ((window_rev << 2) | new_rank) & windowmask; // no & ?
                 return _pext_u64(window_rev, shape_mask_rev) == query_rc;
             }
@@ -197,7 +197,7 @@ inline bool RSHash::extend_in_text(uint64_t &text_pos, uint64_t start, uint64_t 
 template<int level, bool use_shape>
 inline bool RSHash::check_minimiser_pos(uint64_t *buffer, const uint64_t offset,
     const uint64_t query, const uint64_t queryrc,
-    const size_t s, const size_t e, const size_t minimiser_pos,
+    const size_t s, const size_t minimiser_pos,
     bool &forward, uint64_t &text_pos, uint64_t &start_pos, uint64_t &end_pos,
     uint64_t &text_kmer, uint64_t &text_kmer_rc)
 {
@@ -210,35 +210,33 @@ inline bool RSHash::check_minimiser_pos(uint64_t *buffer, const uint64_t offset,
         span = span3;
     
     uint64_t candidate, candidate_rc, window, window_rev;
+    uint64_t pos = span-1-minimiser_pos;
+    uint64_t pos_rc = minimiser_pos;
+
     if constexpr (use_shape) {
-        window = buffer[s+span-1-minimiser_pos - shift_shape_rev/2];
+        pos -= shift_shape_rev/2;
+        window = buffer[s+pos];
         candidate = _pext_u64(window, shape_mask);
-        window_rev = buffer[s+minimiser_pos + shift_shape/2];
+        pos_rc += shift_shape/2;
+        window_rev = buffer[s+pos_rc];
         candidate_rc = _pext_u64(window_rev, shape_mask_rev);
     }
     else {
-        window = candidate = buffer[s+span-1-minimiser_pos];
-        window_rev = candidate_rc = buffer[s+minimiser_pos];
+        window = candidate = buffer[s+pos];
+        window_rev = candidate_rc = buffer[s+pos_rc];
     }
 
-    // todo: one if
-    if(candidate_rc == queryrc) {
-        forward = false;
-        text_pos = offset + minimiser_pos;
-        if constexpr (use_shape)
-            text_pos += shift_shape/2;
-        text_kmer_rc = window_rev;
-        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
-            return true;
-    }
-    if(candidate == query) {
+    if(candidate == query && check_overlap(offset + span, offset + pos, start_pos, end_pos)) {
         forward = true;
-        text_pos = offset + e-1-s-minimiser_pos + k - 1;
-        if constexpr (use_shape)
-            text_pos -= shift_shape_rev/2;
+        text_pos = offset + pos + window_size - 1;
         text_kmer = window;
-        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
-            return true;
+        return true;
+    }
+    if(candidate_rc == queryrc && check_overlap(offset + span, offset + pos_rc, start_pos, end_pos)) {
+        forward = false;
+        text_pos = offset + pos_rc;
+        text_kmer_rc = window_rev;
+        return true;
     }
 
     return false;
@@ -248,64 +246,69 @@ inline bool RSHash::check_minimiser_pos(uint64_t *buffer, const uint64_t offset,
 template<int level, bool use_shape>
 inline bool RSHash::check_minimiser_pos2(uint64_t *buffer, const uint64_t offset,
     const uint64_t query, const uint64_t queryrc,
-    const size_t s, const size_t e, const size_t left_minimiser_pos, const size_t right_minimiser_pos,
+    const size_t s, const size_t left_minimiser_pos, const size_t right_minimiser_pos,
     bool &forward, uint64_t &text_pos, uint64_t &start_pos, uint64_t &end_pos,
     uint64_t &text_kmer, uint64_t &text_kmer_rc)
 {   
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    else if constexpr (level == 2)
+        span = span2;
+    else if constexpr (level == 3)
+        span = span3;
+    
     uint64_t left_candidate, left_candidate_rc, right_candidate, right_candidate_rc;
     uint64_t left_window, left_window_rev, right_window, right_window_rev;
+    uint64_t left_pos = span-1-left_minimiser_pos;
+    uint64_t left_pos_rc = left_minimiser_pos;
+    uint64_t right_pos = right_minimiser_pos;
+    uint64_t right_pos_rc = span-1-right_minimiser_pos;
+
     if constexpr (use_shape) {
-        left_window = buffer[e-1-left_minimiser_pos - shift_shape_rev/2];
+        left_pos -= shift_shape_rev/2;
+        left_window = buffer[s + left_pos];
         left_candidate = _pext_u64(left_window, shape_mask);
-        left_window_rev = buffer[s+left_minimiser_pos + shift_shape/2];
+        left_pos_rc += shift_shape/2;
+        left_window_rev = buffer[s+left_pos_rc];
         left_candidate_rc = _pext_u64(left_window_rev, shape_mask_rev);
-        right_window = buffer[s+right_minimiser_pos - shift_shape_rev/2];
+        right_pos -= shift_shape_rev/2;
+        right_window = buffer[s+right_pos];
         right_candidate = _pext_u64(right_window, shape_mask);
-        right_window_rev = buffer[e-1-right_minimiser_pos + shift_shape/2];
+        right_pos_rc += shift_shape/2;
+        right_window_rev = buffer[s+right_pos_rc];
         right_candidate_rc = _pext_u64(right_window_rev, shape_mask_rev);
     }
     else {
-        left_window = left_candidate = buffer[e-1-left_minimiser_pos];
-        left_window_rev = left_candidate_rc = buffer[s+left_minimiser_pos];
-        right_window = right_candidate = buffer[s+right_minimiser_pos];
-        right_window_rev = right_candidate_rc = buffer[e-1-right_minimiser_pos];
+        left_window = left_candidate = buffer[s+left_pos];
+        left_window_rev = left_candidate_rc = buffer[s+left_pos_rc];
+        right_window = right_candidate = buffer[s+right_pos];
+        right_window_rev = right_candidate_rc = buffer[s+right_pos_rc];
     }
 
-    if(left_candidate_rc == queryrc) {
-        forward = false;
-        text_pos = offset + left_minimiser_pos;
-        if constexpr (use_shape)
-            text_pos += shift_shape/2;
-        text_kmer_rc = left_window_rev;
-        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
-            return true;
-    }
-    if(left_candidate == query) {
+    if(left_candidate == query && check_overlap(offset + span, offset + left_pos, start_pos, end_pos)) {
         forward = true;
-        text_pos = offset + e-1-s-left_minimiser_pos + k - 1;
-        if constexpr (use_shape)
-            text_pos -= shift_shape_rev/2;
+        text_pos = offset + left_pos + window_size - 1;
         text_kmer = left_window;
-        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
-            return true;
+        return true;
     }
-    if(right_candidate == query) {
-        forward = true;
-        text_pos = offset + right_minimiser_pos + k - 1;
-        if constexpr (use_shape)
-            text_pos -= shift_shape_rev/2;
-        text_kmer = right_window;
-        if(check_overlap<level>(offset, text_pos-k+1, start_pos, end_pos))
-            return true;
-    }
-    if(right_candidate_rc == queryrc) {
+    if(left_candidate_rc == queryrc && check_overlap(offset + span, offset + left_pos_rc, start_pos, end_pos)) {
         forward = false;
-        text_pos = offset + e-1-s-right_minimiser_pos;
-        if constexpr (use_shape)
-            text_pos += shift_shape/2;
+        text_pos = offset + left_pos_rc;
+        text_kmer_rc = left_window_rev;
+        return true;
+    }
+    if(right_candidate == query && check_overlap(offset + span, offset + right_pos, start_pos, end_pos)) {
+        forward = true;
+        text_pos = offset + right_pos + window_size - 1;
+        text_kmer = right_window;
+        return true;
+    }
+    if(right_candidate_rc == queryrc && check_overlap(offset + span, offset + right_pos_rc, start_pos, end_pos)) {
+        forward = false;
+        text_pos = offset + right_pos_rc;
         text_kmer = right_window_rev;
-        if(check_overlap<level>(offset, text_pos, start_pos, end_pos))
-            return true;
+        return true;
     }
 
     return false;
@@ -332,21 +335,23 @@ inline bool RSHash::lookup_buffer(uint64_t* buffer, uint64_t *offsets, const siz
         m = m3;
     }
 
-    size_t s = 0, e = 0;
+    size_t s = 0;
     if(left_minimiser_pos != k-m-right_minimiser_pos) {
         for(size_t i = 0; i < no_skmers; i++) {
-            e += span;
-            if(check_minimiser_pos2<level, use_shape>(buffer, offsets[i], query, queryrc, s, e, left_minimiser_pos, right_minimiser_pos, forward, text_pos, start_pos, end_pos, text_kmer, text_kmer_rc))
+            if(check_minimiser_pos2<level, use_shape>(buffer, offsets[i], query, queryrc, s, left_minimiser_pos, right_minimiser_pos, forward, text_pos, start_pos, end_pos, text_kmer, text_kmer_rc))
                 return true;
-            s = e;
+            s += span;
+            if constexpr (use_shape)
+                s += 2*overlap;
         }
     }
     else {
         for(size_t i = 0; i < no_skmers; i++) {
-            e += span;
-            if(check_minimiser_pos<level, use_shape>(buffer, offsets[i], query, queryrc, s, e, left_minimiser_pos, forward, text_pos, start_pos, end_pos, text_kmer, text_kmer_rc))
+            if(check_minimiser_pos<level, use_shape>(buffer, offsets[i], query, queryrc, s, left_minimiser_pos, forward, text_pos, start_pos, end_pos, text_kmer, text_kmer_rc))
                 return true;
-            s = e;
+            s += span;
+            if constexpr (use_shape)
+                s += 2*overlap;
         }
     }
     
@@ -462,8 +467,6 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
 template<bool use_shape>
 uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
 {
-    auto view = rshash::views::kmerview({.window_size = window_size});
-
     constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
     uint64_t current_minimiser1=INF, current_minimiser2=INF;
     uint64_t current_neg_minimiser1=INF, current_neg_minimiser2=INF;
@@ -485,7 +488,7 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
     uint64_t text_kmer, text_kmer_rc;
 
     uint64_t occurences = 0;
-    for(auto && kmer : query | view)
+    for(auto && kmer : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if(found && extend_in_text<use_shape>(text_pos, unitig_begin, unitig_end, forward, kmer.value, kmer.value_rev, text_kmer, text_kmer_rc)) {
             occurences++;

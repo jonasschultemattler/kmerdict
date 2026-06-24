@@ -19,21 +19,25 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset
         span = span3;
 
     uint64_t candidate, candidate_rc;
+    uint64_t pos1 = span-1-minimiser_pos;
+    uint64_t pos2 = minimiser_pos;
+
     if constexpr (use_shape) {
-        candidate = _pext_u64(buffer[s+span-1-minimiser_pos - shift_shape_rev/2], shape_mask);
-        candidate_rc = _pext_u64(buffer[s+minimiser_pos + shift_shape/2], shape_mask_rev);
+        pos1 -= shift_shape_rev/2;
+        pos2 += shift_shape/2;
+        candidate = _pext_u64(buffer[s+pos1], shape_mask);
+        candidate_rc = _pext_u64(buffer[s+pos2], shape_mask_rev);
     }
     else {
-        candidate = buffer[s+span-1-minimiser_pos];
-        candidate_rc = buffer[s+minimiser_pos];
+        candidate = buffer[s+pos1];
+        candidate_rc = buffer[s+pos2];
     }
 
-    if((candidate == kmer && offset + span-1-minimiser_pos >= start_pos && offset + span-1-minimiser_pos + k <= end_pos) || 
-       (candidate_rc == kmerrc && offset + minimiser_pos >= start_pos && offset + minimiser_pos + k <= end_pos)) {
+    if((candidate == kmer && offset + pos1 >= start_pos && offset + pos1 + window_size - 1 < end_pos) || 
+       (candidate_rc == kmerrc && offset + pos2 >= start_pos && offset + pos2 + window_size - 1 < end_pos)) {
         i++;
         return true;
     }
-    
 
     return false;
 }
@@ -55,23 +59,32 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offse
         span = span3;
 
     uint64_t left_candidate, left_candidate_rc, right_candidate, right_candidate_rc;
+    uint64_t left_pos1 = span-1-left_minimiser_pos;
+    uint64_t left_pos2 = left_minimiser_pos;
+    uint64_t right_pos1 = right_minimiser_pos;
+    uint64_t right_pos2 = span-1-right_minimiser_pos;
+
     if constexpr (use_shape) {
-        left_candidate = _pext_u64(buffer[s+span-1-left_minimiser_pos - shift_shape_rev/2], shape_mask);
-        left_candidate_rc = _pext_u64(buffer[s+left_minimiser_pos + shift_shape/2], shape_mask_rev);
-        right_candidate = _pext_u64(buffer[s+right_minimiser_pos - shift_shape_rev/2], shape_mask);
-        right_candidate_rc = _pext_u64(buffer[s+span-1-right_minimiser_pos + shift_shape/2], shape_mask_rev);
+        left_pos1 -= shift_shape_rev/2;
+        left_pos2 += shift_shape/2;
+        right_pos1 -= shift_shape_rev/2;
+        right_pos2 += shift_shape/2;
+        left_candidate = _pext_u64(buffer[s+left_pos1], shape_mask);
+        left_candidate_rc = _pext_u64(buffer[s+left_pos2], shape_mask_rev);
+        right_candidate = _pext_u64(buffer[s+right_pos1], shape_mask);
+        right_candidate_rc = _pext_u64(buffer[s+right_pos2], shape_mask_rev);
     }
     else {
-        left_candidate = buffer[s+span-1-left_minimiser_pos];
-        left_candidate_rc = buffer[s+left_minimiser_pos];
-        right_candidate = buffer[s+right_minimiser_pos];
-        right_candidate_rc = buffer[s+span-1-right_minimiser_pos];
+        left_candidate = buffer[s+left_pos1];
+        left_candidate_rc = buffer[s+left_pos2];
+        right_candidate = buffer[s+right_pos1];
+        right_candidate_rc = buffer[s+right_pos2];
     }
 
-    if((left_candidate == kmer && offset + span-1-left_minimiser_pos >= start_pos && offset + span-1-left_minimiser_pos+k <= end_pos) ||
-       (left_candidate_rc == kmerrc && offset + left_minimiser_pos >= start_pos && offset + left_minimiser_pos + k <= end_pos) ||
-       (right_candidate == kmer && offset + right_minimiser_pos >= start_pos && offset + right_minimiser_pos + k <= end_pos) ||
-       (right_candidate_rc == kmerrc && offset + span-1-right_minimiser_pos >= start_pos && offset + span-1-right_minimiser_pos + k <= end_pos)) {
+    if((left_candidate == kmer && offset + left_pos1 >= start_pos && offset + left_pos1+window_size-1 < end_pos) ||
+       (left_candidate_rc == kmerrc && offset + left_pos2 >= start_pos && offset + left_pos2+window_size-1 < end_pos) ||
+       (right_candidate == kmer && offset + right_pos1 >= start_pos && offset + right_pos1+window_size-1 < end_pos) ||
+       (right_candidate_rc == kmerrc && offset + right_pos2 >= start_pos && offset + right_pos2+window_size-1 < end_pos)) {
         i++;
         return true;
     }

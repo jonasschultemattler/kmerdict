@@ -99,12 +99,11 @@ private:
     inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t);
     template<int level, bool use_shape>
     inline void fill_buffer2(uint64_t *, uint64_t *, uint64_t *, size_t, size_t);
-    template<int level>
     inline bool check_overlap(uint64_t, uint64_t, uint64_t &, uint64_t &);
     template<int level, bool use_shape>
-    inline bool check_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    inline bool check_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
     template<int level, bool use_shape>
-    inline bool check_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    inline bool check_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
     template<int level, bool use_shape>
     inline bool lookup_buffer(uint64_t *, uint64_t *, const size_t, const uint64_t,  const uint64_t, uint64_t &, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
     template<bool use_shape>
@@ -359,7 +358,8 @@ inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *
 
     for(uint64_t i = 0; i < N; i++) {
         uint64_t next_endpoint;
-        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i]+span)-1, &next_endpoint);
+        // endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i] + span) - 1, &next_endpoint);
+        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i] + span - 1) - 1, &next_endpoint);
         endpositions[2*i+1] = next_endpoint;
     }
     
@@ -386,26 +386,18 @@ inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *
     }
 }
 
-template<int level>
-inline bool RSHash::check_overlap(uint64_t skmer_pos, uint64_t text_pos, uint64_t &start_pos, uint64_t &end_pos)
-{
-    size_t span;
-    if constexpr (level == 1)
-        span = span1;
-    if constexpr (level == 2)
-        span = span2;
-    if constexpr (level == 3)
-        span = span3;
-    
-    const uint64_t r = endpoints.rank(skmer_pos+span);
+inline bool RSHash::check_overlap(uint64_t pos, uint64_t text_pos, uint64_t &start_pos, uint64_t &end_pos)
+{   
+    const uint64_t r = endpoints.rank(pos);
     start_pos = endpoints.select(r-1, &end_pos);
 
-    return text_pos >= start_pos && text_pos+k-1 < end_pos;
+    return text_pos >= start_pos && text_pos + window_size - 1 < end_pos;
 }
 
 
 template<int level>
-inline uint64_t RSHash::find_minimiser(const uint64_t kmer, const uint64_t kmer_rc, size_t &left_minimiser_position, size_t &right_minimiser_position)
+inline uint64_t RSHash::find_minimiser(const uint64_t kmer, const uint64_t kmer_rc,
+    size_t &left_minimiser_position, size_t &right_minimiser_position)
 {
     uint64_t m, mmermask;
     mixer_64 m_hasher;
@@ -448,7 +440,8 @@ inline uint64_t RSHash::find_minimiser(const uint64_t kmer, const uint64_t kmer_
 }
 
 template<int level>
-inline void RSHash::update_minimiser(const uint64_t kmer, const uint64_t kmer_rc, uint64_t &minimiser, size_t &left_minimiser_position, size_t &right_minimiser_position)
+inline void RSHash::update_minimiser(const uint64_t kmer, const uint64_t kmer_rc,
+    uint64_t &minimiser, size_t &left_minimiser_position, size_t &right_minimiser_position)
 {
     uint64_t m, mmermask;
     mixer_64 m_hasher;
