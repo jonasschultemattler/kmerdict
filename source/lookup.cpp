@@ -415,12 +415,12 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
             kmer_rc = window.value_rev;
         }
 
-        if(found && extend_in_text<use_shape>(text_pos, unitig_begin, unitig_end, forward, kmer, kmer_rc, text_kmer, text_kmer_rc)) {
-            occurences++;
-            extensions++;
-            rolling = false;
-        }
-        else {
+        // if(found && extend_in_text<use_shape>(text_pos, unitig_begin, unitig_end, forward, kmer, kmer_rc, text_kmer, text_kmer_rc)) {
+        //     occurences++;
+        //     extensions++;
+        //     rolling = false;
+        // }
+        // else {
             if constexpr (use_shape) {
                 kernel = (window.value & kernel_mask) >> shift_shape;
                 kernel_rev = (window.value_rev & kernel_mask_rev) >> shift_shape_rev;
@@ -456,7 +456,7 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
                 current_neg_minimiser1 = minimiser1;
             }
         }
-    }
+    // }
 
     delete[] offsets1;
     delete[] buffer1;
@@ -475,7 +475,7 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
     uint64_t* buffer1 = new uint64_t[m_thres1 * (span1 + 2*overlap)];
     uint64_t* buffer2 = new uint64_t[m_thres2 * (span2 + 2*overlap)];
     size_t no_skmers1, no_skmers2, no_skmers3;
-    uint64_t unitig_begin, unitig_end;
+    uint64_t sequence_begin, sequence_end;
     uint64_t text_pos;
     bool forward;
     bool found = false;
@@ -485,27 +485,46 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
     uint64_t minimiser1, minimiser1_rank;
     size_t left_minimiser2_position, right_minimiser2_position;
     uint64_t minimiser2, minimiser2_rank;
+    uint64_t kmer, kmer_rc, kernel, kernel_rev;
     uint64_t text_kmer, text_kmer_rc;
 
     uint64_t occurences = 0;
-    for(auto && kmer : query | rshash::views::kmerview({.window_size = window_size}))
+    for(auto && window : query | rshash::views::kmerview({.window_size = window_size}))
     {
-        if(found && extend_in_text<use_shape>(text_pos, unitig_begin, unitig_end, forward, kmer.value, kmer.value_rev, text_kmer, text_kmer_rc)) {
-            occurences++;
-            extensions++;
-            rolling1 = false;
-            rolling2 = false;
+        if constexpr (use_shape) {
+            kmer = _pext_u64(window.value, shape_mask);
+            kmer_rc = _pext_u64(window.value_rev, shape_mask_rev);
         }
         else {
-            if(rolling1)
-                update_minimiser<1>(kmer.value, kmer.value_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            kmer = window.value;
+            kmer_rc = window.value_rev;
+        }
+
+        // if(found && extend_in_text<use_shape>(text_pos, sequence_begin, sequence_end, forward, kmer, kmer_rc, text_kmer, text_kmer_rc)) {
+        //     occurences++;
+        //     extensions++;
+        //     rolling1 = false;
+        //     rolling2 = false;
+        // }
+        // else {
+            if constexpr (use_shape) {
+                kernel = (window.value & kernel_mask) >> shift_shape;
+                kernel_rev = (window.value_rev & kernel_mask_rev) >> shift_shape_rev;
+            }
             else {
-                minimiser1 = find_minimiser<1>(kmer.value, kmer.value_rev, left_minimiser1_position, right_minimiser1_position);
+                kernel = window.value;
+                kernel_rev = window.value_rev;
+            }
+
+            if(rolling1)
+                update_minimiser<1>(kernel, kernel_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            else {
+                minimiser1 = find_minimiser<1>(kernel, kernel_rev, left_minimiser1_position, right_minimiser1_position);
                 rolling1 = true;
             }
 
             if(minimiser1 == current_minimiser1) {
-                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer.value, kmer.value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer, kmer_rc, text_pos, left_minimiser1_position, right_minimiser1_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                 occurences += found;
                 rolling2 = false;
             }
@@ -514,21 +533,21 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
                 no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
 
                 fill_buffer<1, use_shape>(offsets1, buffer1, p, no_skmers1);
-                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer.value, kmer.value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer, kmer_rc, text_pos, left_minimiser1_position, right_minimiser1_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                 occurences += found;
                 current_minimiser1 = minimiser1;
                 rolling2 = false;
             }
             else {
                 if(rolling2)
-                    update_minimiser<2>(kmer.value, kmer.value_rev, minimiser2, left_minimiser2_position, right_minimiser2_position);
+                    update_minimiser<2>(kernel, kernel_rev, minimiser2, left_minimiser2_position, right_minimiser2_position);
                 else {
-                    minimiser2 = find_minimiser<2>(kmer.value, kmer.value_rev, left_minimiser2_position, right_minimiser2_position);
+                    minimiser2 = find_minimiser<2>(kernel, kernel_rev, left_minimiser2_position, right_minimiser2_position);
                     rolling2 = true;
                 }
 
                 if(minimiser2 == current_minimiser2) {
-                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer.value, kmer.value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer, kmer_rc, text_pos, left_minimiser2_position, right_minimiser2_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                     occurences += found;
                 }
                 else if(minimiser2 != current_neg_minimiser2 && r2.contains(minimiser2, minimiser2_rank)) {
@@ -536,19 +555,19 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
                     no_skmers2 = s2_select.select(minimiser2_rank+1) - p;
 
                     fill_buffer<2, use_shape>(offsets2, buffer2, p, no_skmers2);
-                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer.value, kmer.value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer, kmer_rc, text_pos, left_minimiser2_position, right_minimiser2_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                     occurences += found;
                     current_minimiser2 = minimiser2;
                     current_neg_minimiser1 = minimiser1;
                 }   
                 else {
-                    occurences += hashset.contains(std::min<uint64_t>(kmer.value, kmer.value_rev));
+                    occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
                     found = false;
                     current_neg_minimiser1 = minimiser1;
                     current_neg_minimiser2 = minimiser2;
                 }
             }
-        }
+        // }
     }
 
     delete[] offsets1;
@@ -562,8 +581,6 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
 template<bool use_shape>
 uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
 {
-    auto view = rshash::views::kmerview({.window_size = window_size});
-
     constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
     uint64_t current_minimiser1=INF, current_minimiser2=INF, current_minimiser3=INF;
     uint64_t current_neg_minimiser1=INF, current_neg_minimiser2=INF, current_neg_minimiser3=INF;
@@ -574,7 +591,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
     uint64_t* buffer2 = new uint64_t[m_thres2 * (span2 + 2*overlap)];
     uint64_t* buffer3 = new uint64_t[m_thres3 * (span3 + 2*overlap)];
     size_t no_skmers1, no_skmers2, no_skmers3;
-    uint64_t unitig_begin, unitig_end;
+    uint64_t sequence_begin, sequence_end;
     uint64_t text_pos;
     bool forward;
     bool found = false;
@@ -588,27 +605,46 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
     size_t left_minimiser3_position, right_minimiser3_position;
     uint64_t minimiser3, minimiser3_rank;
     uint64_t text_kmer, text_kmer_rc;
+    uint64_t kmer, kmer_rc, kernel, kernel_rev;
 
     uint64_t occurences = 0;
-    for(auto && kmer : query | view)
+    for(auto && window : query | rshash::views::kmerview({.window_size = window_size}))
     {
-        if(found && extend_in_text<use_shape>(text_pos, unitig_begin, unitig_end, forward, kmer.value, kmer.value_rev, text_kmer, text_kmer_rc)) {
-            occurences++;
-            extensions++;
-            rolling1 = false;
-            rolling2 = false;
-            rolling3 = false;
+        if constexpr (use_shape) {
+            kmer = _pext_u64(window.value, shape_mask);
+            kmer_rc = _pext_u64(window.value_rev, shape_mask_rev);
         }
         else {
-            if(rolling1)
-                update_minimiser<1>(kmer.value, kmer.value_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            kmer = window.value;
+            kmer_rc = window.value_rev;
+        }
+
+        // if(found && extend_in_text<use_shape>(text_pos, sequence_begin, sequence_end, forward, kmer, kmer_rc, text_kmer, text_kmer_rc)) {
+        //     occurences++;
+        //     extensions++;
+        //     rolling1 = false;
+        //     rolling2 = false;
+        //     rolling3 = false;
+        // }
+        // else {
+            if constexpr (use_shape) {
+                kernel = (window.value & kernel_mask) >> shift_shape;
+                kernel_rev = (window.value_rev & kernel_mask_rev) >> shift_shape_rev;
+            }
             else {
-                minimiser1 = find_minimiser<1>(kmer.value, kmer.value_rev, left_minimiser1_position, right_minimiser1_position);
+                kernel = window.value;
+                kernel_rev = window.value_rev;
+            }
+
+            if(rolling1)
+                update_minimiser<1>(kernel, kernel_rev, minimiser1, left_minimiser1_position, right_minimiser1_position);
+            else {
+                minimiser1 = find_minimiser<1>(kernel, kernel_rev, left_minimiser1_position, right_minimiser1_position);
                 rolling1 = true;
             }
 
             if(minimiser1 == current_minimiser1) {
-                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer.value, kmer.value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer, kmer_rc, text_pos, left_minimiser1_position, right_minimiser1_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                 occurences += found;
                 rolling2 = false;
                 rolling3 = false;
@@ -618,7 +654,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                 no_skmers1 = s1_select.select(minimiser1_rank+1) - p;
 
                 fill_buffer<1, use_shape>(offsets1, buffer1, p, no_skmers1);
-                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer.value, kmer.value_rev, text_pos, left_minimiser1_position, right_minimiser1_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                found = lookup_buffer<1, use_shape>(buffer1, offsets1, no_skmers1, kmer, kmer_rc, text_pos, left_minimiser1_position, right_minimiser1_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                 occurences += found;
                 current_minimiser1 = minimiser1;
                 rolling2 = false;
@@ -626,14 +662,14 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
             }
             else {
                 if(rolling2)
-                    update_minimiser<2>(kmer.value, kmer.value_rev, minimiser2, left_minimiser2_position, right_minimiser2_position);
+                    update_minimiser<2>(kernel, kernel_rev, minimiser2, left_minimiser2_position, right_minimiser2_position);
                 else {
-                    minimiser2 = find_minimiser<2>(kmer.value, kmer.value_rev, left_minimiser2_position, right_minimiser2_position);
+                    minimiser2 = find_minimiser<2>(kernel, kernel_rev, left_minimiser2_position, right_minimiser2_position);
                     rolling2 = true;
                 }
 
                 if(minimiser2 == current_minimiser2) {
-                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer.value, kmer.value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer, kmer_rc, text_pos, left_minimiser2_position, right_minimiser2_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                     occurences += found;
                     rolling3 = false;
                 }
@@ -642,7 +678,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                     no_skmers2 = s2_select.select(minimiser2_rank+1) - p;
 
                     fill_buffer<2, use_shape>(offsets2, buffer2, p, no_skmers2);
-                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer.value, kmer.value_rev, text_pos, left_minimiser2_position, right_minimiser2_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                    found = lookup_buffer<2, use_shape>(buffer2, offsets2, no_skmers2, kmer, kmer_rc, text_pos, left_minimiser2_position, right_minimiser2_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                     occurences += found;
                     current_minimiser2 = minimiser2;
                     current_neg_minimiser1 = minimiser1;
@@ -650,14 +686,14 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                 }
                 else {
                     if(rolling3)
-                        update_minimiser<3>(kmer.value, kmer.value_rev, minimiser3, left_minimiser3_position, right_minimiser3_position);
+                        update_minimiser<3>(kernel, kernel_rev, minimiser3, left_minimiser3_position, right_minimiser3_position);
                     else {
-                        minimiser3 = find_minimiser<3>(kmer.value, kmer.value_rev, left_minimiser3_position, right_minimiser3_position);
+                        minimiser3 = find_minimiser<3>(kernel, kernel_rev, left_minimiser3_position, right_minimiser3_position);
                         rolling3 = true;
                     }
 
                     if(minimiser3 == current_minimiser3) {
-                        found = lookup_buffer<3, use_shape>(buffer3, offsets3, no_skmers3, kmer.value, kmer.value_rev, text_pos, left_minimiser3_position, right_minimiser3_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                        found = lookup_buffer<3, use_shape>(buffer3, offsets3, no_skmers3, kmer, kmer_rc, text_pos, left_minimiser3_position, right_minimiser3_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                         occurences += found;
                     }
                     else if(minimiser3 != current_neg_minimiser3 && r3.contains(minimiser3, minimiser3_rank)) {
@@ -665,14 +701,14 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                         no_skmers3 = s3_select.select(minimiser3_rank+1) - p;
 
                         fill_buffer<3, use_shape>(offsets3, buffer3, p, no_skmers3);
-                        found = lookup_buffer<3, use_shape>(buffer3, offsets3, no_skmers3, kmer.value, kmer.value_rev, text_pos, left_minimiser3_position, right_minimiser3_position, forward, unitig_begin, unitig_end, text_kmer, text_kmer_rc);
+                        found = lookup_buffer<3, use_shape>(buffer3, offsets3, no_skmers3, kmer, kmer_rc, text_pos, left_minimiser3_position, right_minimiser3_position, forward, sequence_begin, sequence_end, text_kmer, text_kmer_rc);
                         occurences += found;
                         current_minimiser3 = minimiser3;
                         current_neg_minimiser1 = minimiser1;
                         current_neg_minimiser2 = minimiser2;
                     }
                     else {
-                        occurences += hashset.contains(std::min<uint64_t>(kmer.value, kmer.value_rev));
+                        occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
                         found = false;
                         current_neg_minimiser1 = minimiser1;
                         current_neg_minimiser2 = minimiser2;
@@ -680,7 +716,7 @@ uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4
                     }
                 }
             }
-        }
+        // }
     }
 
     delete[] offsets1;

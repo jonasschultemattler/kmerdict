@@ -38,6 +38,13 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset
         i++;
         return true;
     }
+    // for(size_t j = 0; j < span + 2*overlap; j++) {
+    //     if((_pext_u64(buffer[s+j], shape_mask) == kmer && offset + j >= start_pos && offset + j + window_size - 1 < end_pos) ||
+    //        (_pext_u64(buffer[s+j], shape_mask_rev) == kmerrc && offset + j >= start_pos && offset + j + window_size - 1 < end_pos)) {
+    //         i++;
+    //         return true;
+    //     }
+    // }
 
     return false;
 }
@@ -133,6 +140,13 @@ inline void RSHash::locate_buffer(uint64_t *buffer, uint64_t *offsets, uint64_t 
                 s += 2*overlap;
         }
     }
+    // for(size_t i = 0; i < no_minimiser; i++) {
+    //     found |= report_minimiser_pos<level, use_shape>(buffer, offsets[i], query, queryrc, found_positions, s, left_minimiser_pos, sequence_ends[2*i], sequence_ends[2*i+1], positions);
+    //     s += span;
+    //     if constexpr (use_shape)
+    //         s += 2*overlap;
+    // }
+    
     found_kmers += found;
 }
 

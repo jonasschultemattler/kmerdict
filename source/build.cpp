@@ -281,24 +281,27 @@ size_t RSHash::get_frequent_skmers(
     return freq_kmers;
 }
 
-template<bool use_shape>
+// template<bool use_shape>
 void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& input,
     const std::vector<SkmerInfo> &freq_skmers)
 {
-    auto view = [&]() {
-        if constexpr (use_shape)
-            return rshash::views::shapeview({.shape = shape.value});
-        else
-            return rshash::views::kmerview({.window_size = k});
-    }();
+    bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
 
     if(loc) {
-        gtl::flat_hash_map<uint64_t, uint16_t> kmer_counts; // threshold <= 2^16
+        gtl::flat_hash_map<uint64_t, uint16_t> kmer_counts; // assert threshold <= 2^16
         if(threshold > 0) {
             for(const auto & skmer_info : freq_skmers) {
-                auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-                for(auto && kmer : skmer | view) {
-                    const uint64_t canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
+                // if constexpr (use_shape)
+                //     auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start - overlap) | std::views::take(skmer_info.end - skmer_info.start);
+                // else
+                //     auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
+                auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start - overlap) | std::views::take(skmer_info.end - skmer_info.start + 2*overlap);
+                for(auto && kmer : skmer | rshash::views::kmerview({.window_size = window_size})) {
+                    uint64_t canonical_kmer;
+                    if(use_shape)
+                        canonical_kmer = std::min<uint64_t>(_pext_u64(kmer.value, shape_mask), _pext_u64(kmer.value_rev, shape_mask_rev));
+                    else
+                        canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
                     uint16_t count = kmer_counts[canonical_kmer];
                     if(count < threshold)
                         kmer_counts[canonical_kmer]++;
@@ -306,26 +309,38 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
             }
         }
         for(const auto & skmer_info : freq_skmers) {
-            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-            const uint32_t skmer_pos = endpoints.select(skmer_info.seq_id+1) + skmer_info.start;
+            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start - overlap) | std::views::take(skmer_info.end - skmer_info.start + 2*overlap);
+            const uint32_t skmer_pos = endpoints.select(skmer_info.seq_id+1) + skmer_info.start - overlap;
             uint32_t p = 0;
-            for(auto && kmer : skmer | view) {
-                const uint64_t canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
+            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = window_size})) {
+                uint64_t canonical_kmer;
+                if(use_shape)
+                    canonical_kmer = std::min<uint64_t>(_pext_u64(kmer.value, shape_mask), _pext_u64(kmer.value_rev, shape_mask_rev));
+                else
+                    canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
                 if(threshold > 0) {
                     if(kmer_counts[canonical_kmer] < threshold)
                         hashmap[canonical_kmer].push_back(skmer_pos + p);
                 }
                 else
                     hashmap[canonical_kmer].push_back(skmer_pos + p);
+                    
                 p++;
             }
         }
     }
     else {
         for(const auto & skmer_info : freq_skmers) {
-            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
-            for(auto && kmer : skmer | view)
-                hashset.insert(std::min<uint64_t>(kmer.value, kmer.value_rev));
+            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start - overlap) | std::views::take(skmer_info.end - skmer_info.start + 2*overlap);
+            for(auto && kmer : skmer | rshash::views::kmerview({.window_size = window_size})) {
+                uint64_t canonical_kmer;
+                if(use_shape)
+                    canonical_kmer = std::min<uint64_t>(_pext_u64(kmer.value, shape_mask), _pext_u64(kmer.value_rev, shape_mask_rev));
+                else
+                    canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
+
+                hashset.insert(canonical_kmer);
+            }
         }
     }
 }
@@ -414,10 +429,7 @@ void RSHash::build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>& 
     }
 
     std::cout << "build HT...\n";
-    if(shape.value != std::numeric_limits<uint32_t>::max())
-        fill_ht<true>(input, freq_skmers);
-    else
-        fill_ht<false>(input, freq_skmers);
+    fill_ht(input, freq_skmers);
 
     std::cout << "copy text...\n";
     text = pack_dna4_to_uint64(input);

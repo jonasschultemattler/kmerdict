@@ -87,7 +87,6 @@ private:
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
     size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
-    template<bool use_shape>
     void fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
@@ -156,7 +155,7 @@ public:
     RSHash(uint32_t const shape, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
             uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc)
         : shape(shape32_create(shape)),
-        k(this->shape.kernel_end - this->shape.kernel_start), overlap(this->shape.length - this->k),
+        k(this->shape.kernel_end - this->shape.kernel_start), overlap(this->shape.length - this->k), // overlap = max(left_overlpat, right_overlap)
         level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc),
         span1(this->k-m1+1), span2(this->k-m2+1), span3(this->k-m3+1),
         window_size(this->k + this->overlap), windowmask(compute_mask(2u * window_size)), windowshift(2 * (this->shape.length-1)), kmermask(compute_mask(2u * this->k)),
@@ -195,16 +194,19 @@ public:
         const uint64_t no_skmers2 = s2.size();
         const uint64_t no_minimizers3 = r3.rank(M3);
         const uint64_t no_skmers3 = s3.size();
-        size_t ht_space;
+        size_t ht_space, kmers_ht;
         if(loc) {
             // ht_space = hashmap.capacity()*(sizeof(uint64_t) + sizeof(uint32_t) + 1)*8;
             size_t total = sizeof(hashmap) +  hashmap.capacity()*sizeof(decltype(hashmap)::value_type);
             for (const auto& [k, vec] : hashmap)
                 total += vec.capacity() * sizeof(uint32_t);
             ht_space = total*8;
+            kmers_ht = hashmap.size();
         }
-        else
+        else {
             ht_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8;
+            kmers_ht = hashset.size();
+        }
 
         std::cout << "====== report ======\n";
         std::cout << "text length: " << N << "\n";
@@ -219,7 +221,7 @@ public:
         std::cout << "no minimiser3: " << no_minimizers3 << "\n";
         std::cout << "no distinct minimiser3: " << no_skmers3 << "\n";
         std::cout << "avg superkmers3: " << (double) no_skmers3/no_minimizers3 <<  '\n';
-        std::cout << "no kmers HT: " << hashmap.size() << " " << (double) hashmap.size()/no_text_kmers*100 << "%\n";
+        std::cout << "no kmers HT: " << kmers_ht << " " << (double) kmers_ht/no_text_kmers*100 << "%\n";
 
         std::cout << "density r1: " << (double) no_minimizers1/M1*100 << "%\n";
         std::cout << "density r2: " << (double) no_minimizers2/M2*100 << "%\n";
@@ -358,8 +360,7 @@ inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *
 
     for(uint64_t i = 0; i < N; i++) {
         uint64_t next_endpoint;
-        // endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i] + span) - 1, &next_endpoint);
-        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i] + span - 1) - 1, &next_endpoint);
+        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i] + span) - 1, &next_endpoint);
         endpositions[2*i+1] = next_endpoint;
     }
     
