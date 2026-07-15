@@ -331,15 +331,23 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
     }
     else {
         for(const auto & skmer_info : freq_skmers) {
-            auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start - overlap) | std::views::take(skmer_info.end - skmer_info.start + 2*overlap);
+            size_t s = (skmer_info.start > overlap) ? skmer_info.start - overlap : 0;
+            size_t e = std::min(skmer_info.end + overlap, input[skmer_info.seq_id].size()); // + overlap?
+            auto skmer = input[skmer_info.seq_id] | std::views::drop(s) | std::views::take(e - s);
+            // auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
             for(auto && kmer : skmer | rshash::views::kmerview({.window_size = window_size})) {
-                uint64_t canonical_kmer;
-                if(use_shape)
-                    canonical_kmer = std::min<uint64_t>(_pext_u64(kmer.value, shape_mask), _pext_u64(kmer.value_rev, shape_mask_rev));
+                // uint64_t canonical_kmer;
+                // if(use_shape)
+                //     canonical_kmer = std::min<uint64_t>(_pext_u64(kmer.value, shape_mask), _pext_u64(kmer.value_rev, shape_mask_rev));
+                // else
+                //     canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
+                // hashset.insert(canonical_kmer);
+                if(use_shape) {
+                    hashset.insert(_pext_u64(kmer.value, shape_mask));
+                    hashset_rc.insert(_pext_u64(kmer.value, shape_mask_rev));
+                }
                 else
-                    canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
-
-                hashset.insert(canonical_kmer);
+                    hashset.insert(std::min<uint64_t>(kmer.value, kmer.value_rev));
             }
         }
     }

@@ -23,8 +23,8 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset
     uint64_t pos2 = minimiser_pos;
 
     if constexpr (use_shape) {
-        pos1 -= shift_shape_rev/2;
-        pos2 += shift_shape/2;
+        pos1 -= 0;
+        pos2 += 0;
         candidate = _pext_u64(buffer[s+pos1], shape_mask);
         candidate_rc = _pext_u64(buffer[s+pos2], shape_mask_rev);
     }
@@ -72,10 +72,10 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offse
     uint64_t right_pos2 = span-1-right_minimiser_pos;
 
     if constexpr (use_shape) {
-        left_pos1 -= shift_shape_rev/2;
-        left_pos2 += shift_shape/2;
-        right_pos1 -= shift_shape_rev/2;
-        right_pos2 += shift_shape/2;
+        left_pos1 -= 0;
+        left_pos2 += 0;
+        right_pos1 -= 0;
+        right_pos2 += 0;
         left_candidate = _pext_u64(buffer[s+left_pos1], shape_mask);
         left_candidate_rc = _pext_u64(buffer[s+left_pos2], shape_mask_rev);
         right_candidate = _pext_u64(buffer[s+right_pos1], shape_mask);
@@ -197,8 +197,8 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
     for (auto&& window : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if constexpr (use_shape) {
-            kernel = (window.value & kernel_mask) >> shift_shape;
-            kernel_rev = (window.value_rev & kernel_mask_rev) >> shift_shape_rev;
+            kernel = (window.value & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (window.value_rev & kernel_mask_rev) >> 2*shape_overlap_left;
             kmer = _pext_u64(window.value, shape_mask);
             kmer_rc = _pext_u64(window.value_rev, shape_mask_rev);
         }
@@ -271,8 +271,8 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
     for (auto&& window : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if constexpr (use_shape) {
-            kernel = (window.value & kernel_mask) >> shift_shape;
-            kernel_rev = (window.value_rev & kernel_mask_rev) >> shift_shape_rev;
+            kernel = (window.value & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (window.value_rev & kernel_mask_rev) >> 2*shape_overlap_left;
             kmer = _pext_u64(window.value, shape_mask);
             kmer_rc = _pext_u64(window.value_rev, shape_mask_rev);
         }
@@ -380,8 +380,8 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
     for (auto&& window : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if constexpr (use_shape) {
-            kernel = (window.value & kernel_mask) >> shift_shape;
-            kernel_rev = (window.value_rev & kernel_mask_rev) >> shift_shape_rev;
+            kernel = (window.value & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (window.value_rev & kernel_mask_rev) >> 2*shape_overlap_left;
             kmer = _pext_u64(window.value, shape_mask);
             kmer_rc = _pext_u64(window.value_rev, shape_mask_rev);
         }

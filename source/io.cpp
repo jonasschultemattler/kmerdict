@@ -80,10 +80,10 @@ int RSHash::save(const std::filesystem::path &filepath) {
     std::ofstream out(filepath, std::ios::binary);
     cereal::BinaryOutputArchive archive(out);
 
-    archive(k, shape.value, windowmask, windowshift, window_size, overlap, shape_mask, shape_mask_rev, shift_shape, shift_shape_rev, kernel_mask, kernel_mask_rev,
-        kmermask, mmermask1, mmermask2, mmermask3,
+    archive(k, shape.value, windowmask, windowshift, window_size, shape_overlap_left, shape_overlap_right, overlap,
+        shape_mask, shape_mask_rev, kernel_mask, kernel_mask_rev, mmermask1, mmermask2, mmermask3,
         level, m1, m2, m3, m_thres1, m_thres2, m_thres3, threshold, span1, span2, span3,
-        s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashmap);
+        s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashset_rc, hashmap, hashmap_rc);
 
     out.close();
     return 0;
@@ -94,17 +94,16 @@ int RSHash::load(const std::filesystem::path &filepath) {
     cereal::BinaryInputArchive archive(in);
 
     uint32_t shape_value;
-    archive(k, shape_value, windowmask, windowshift, window_size, overlap, shape_mask, shape_mask_rev, shift_shape, shift_shape_rev, kernel_mask, kernel_mask_rev,
-        kmermask, mmermask1, mmermask2, mmermask3,
+    archive(k, shape_value, windowmask, windowshift, window_size, shape_overlap_left, shape_overlap_right, overlap,
+        shape_mask, shape_mask_rev, kernel_mask, kernel_mask_rev, mmermask1, mmermask2, mmermask3,
         level, m1, m2, m3, m_thres1, m_thres2, m_thres3, threshold, span1, span2, span3,
-        s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashmap);
+        s1, s2, s3, endpoints, r1, r2, r3, offsets1, offsets2, offsets3, text, loc, hashset, hashset_rc, hashmap, hashmap_rc);
     in.close();
 
     this->shape = shape32_create(shape_value);
 
-    // std::cout << shape_value << " " << std::bitset<64>(windowmask) << " " << window_size << " " << overlap << " "
-    // << std::bitset<64>(shape_mask) << " " << std::bitset<64>(shape_mask_rev) << " " << shift_shape << " " << shift_shape_rev << " "
-    // << " " << std::bitset<64>(kmermask) << '\n';
+    std::cout << shape_value << " " << std::bitset<64>(windowmask) << " " << window_size << " ";
+    std::cout << std::bitset<64>(shape_mask) << " " << std::bitset<64>(shape_mask_rev) << " " << shape_overlap_left << " " << shape_overlap_right << " " << std::bitset<64>(kernel_mask) << " " << std::bitset<64>(kernel_mask_rev) << '\n';
 
     this->s1_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s1.data()), s1.size(), 3);
     this->s2_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s2.data()), s2.size(), 3);
