@@ -94,7 +94,7 @@ private:
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
     inline void update_minimiser(const uint64_t, const uint64_t, uint64_t&, size_t &, size_t &);
-    template<int level>
+    template<int level, bool use_shape>
     inline bool check(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
     template<int level, bool use_shape>
     inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t);
@@ -124,8 +124,11 @@ private:
     size_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
     template<bool use_shape>
     size_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
+    template<bool use_shape>
     uint64_t lookup1(const std::vector<uint64_t>&);
+    template<bool use_shape>
     uint64_t lookup2(const std::vector<uint64_t>&);
+    template<bool use_shape>
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<int level, bool use_shape>
     inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
@@ -179,7 +182,7 @@ public:
     uint8_t getmaxmthres() { return std::max({m_thres1, m_thres2, m_thres3}); }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
-    const inline uint64_t access(const uint64_t, const size_t);
+    const inline uint64_t access(const size_t);
     uint64_t lookup(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
@@ -255,11 +258,10 @@ public:
         std::mt19937 m_rand(1);
         std::vector<std::uint64_t> kmers;
         kmers.reserve(n);
-        const uint64_t l = (text.size()-1)*32;
+        const size_t l = (text.size()-1)*32;
 
-        const uint64_t no_unitigs = number_unitigs();
-        for (uint64_t i = 0; i < n;) {
-            const uint64_t offset = distr(m_rand) % l;
+        for (uint64_t i = 0; i < n; i++) {
+            const size_t offset = distr(m_rand) % l;
 
             const uint64_t r = endpoints.rank(offset+1);
             const uint64_t next_endpoint = endpoints.select(r);
@@ -267,15 +269,14 @@ public:
             if(offset + 64 >= next_endpoint)
                 continue;
 
-            const uint64_t kmer = access(0, offset);
+            const uint64_t kmer = access(offset);
 
             if ((i & 1) == 0)
-                kmers.push_back(crc(kmer, k));
+                kmers.push_back(crc(kmer, window_size));
             else
                 kmers.push_back(kmer);
-
-            i++;
         }
+
         return kmers;
     }
 };
@@ -297,7 +298,7 @@ const inline uint64_t RSHash::get_base(uint64_t pos) {
 }
 
 
-const inline uint64_t RSHash::access(const uint64_t unitig_id, const size_t offset) {
+const inline uint64_t RSHash::access(const size_t offset) {
     return get_word64(offset) & windowmask;
 }
 

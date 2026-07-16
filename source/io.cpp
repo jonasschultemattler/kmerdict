@@ -102,8 +102,8 @@ int RSHash::load(const std::filesystem::path &filepath) {
 
     this->shape = shape32_create(shape_value);
 
-    std::cout << shape_value << " " << std::bitset<64>(windowmask) << " " << window_size << " ";
-    std::cout << std::bitset<64>(shape_mask) << " " << std::bitset<64>(shape_mask_rev) << " " << shape_overlap_left << " " << shape_overlap_right << " " << std::bitset<64>(kernel_mask) << " " << std::bitset<64>(kernel_mask_rev) << '\n';
+    // std::cout << shape_value << " " << std::bitset<64>(windowmask) << " " << window_size << " ";
+    // std::cout << std::bitset<64>(shape_mask) << " " << std::bitset<64>(shape_mask_rev) << " " << shape_overlap_left << " " << shape_overlap_right << " " << std::bitset<64>(kernel_mask) << " " << std::bitset<64>(kernel_mask_rev) << '\n';
 
     this->s1_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s1.data()), s1.size(), 3);
     this->s2_select = sux::bits::SimpleSelect(reinterpret_cast<uint64_t*>(s2.data()), s2.size(), 3);

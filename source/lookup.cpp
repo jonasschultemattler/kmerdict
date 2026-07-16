@@ -4,55 +4,39 @@
 #include "rshash.hpp"
 
 
+template<bool use_shape>
 uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
 {
     uint64_t occurences = 0;
     uint64_t* offsets = new uint64_t[m_thres1];
     
     uint64_t minimiser, minimiser_rank;
+    uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
 
     for(uint64_t kmer : kmers) {
-        const uint64_t kmer_rc = crc(kmer, k);
-        minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-        if(r1.contains(minimiser, minimiser_rank)) {
-            size_t p = s1_select.select(minimiser_rank);
-            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
-            occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
-        }
-        else
-            occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
-    }
+        uint64_t kmer_rc = crc(kmer, window_size);
 
-    delete[] offsets;
-
-    return occurences;
-}
-
-uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
-{
-    uint64_t occurences = 0;
-
-    uint64_t* offsets = new uint64_t[m_thres2];
-    
-    uint64_t minimiser, minimiser_rank;
-    size_t left_minimiser_position, right_minimiser_position;
-
-    for(uint64_t kmer : kmers) {
-        const uint64_t kmer_rc = crc(kmer, k);
-        minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-        if(r1.contains(minimiser, minimiser_rank)) {
-            size_t p = s1_select.select(minimiser_rank);
-            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
-            occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        if constexpr (use_shape) {
+            kernel = (kmer & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape_overlap_left;
+            kmer = _pext_u64(kmer, shape_mask);
+            kmer_rc = _pext_u64(kmer_rc, shape_mask_rev);
         }
         else {
-            minimiser = find_minimiser<2>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-            if(r2.contains(minimiser, minimiser_rank)) {
-                size_t p = s2_select.select(minimiser_rank);
-                size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
-                occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
-            }
+            kernel = kmer;
+            kernel_rev = kmer_rc;
+        }
+
+        minimiser = find_minimiser<1>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+        if(r1.contains(minimiser, minimiser_rank)) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+            occurences += check<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else {
+            if constexpr (use_shape)
+                occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
             else
                 occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
         }
@@ -63,38 +47,47 @@ uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
     return occurences;
 }
 
-uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
+template<bool use_shape>
+uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
 {
     uint64_t occurences = 0;
 
-    uint64_t* offsets = new uint64_t[m_thres3];
+    uint64_t* offsets = new uint64_t[m_thres2];
     
     uint64_t minimiser, minimiser_rank;
+    uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
 
     for(uint64_t kmer : kmers) {
-        const uint64_t kmer_rc = crc(kmer, k);
-        minimiser = find_minimiser<1>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+        uint64_t kmer_rc = crc(kmer, window_size);
 
+        if constexpr (use_shape) {
+            kernel = (kmer & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape_overlap_left;
+            kmer = _pext_u64(kmer, shape_mask);
+            kmer_rc = _pext_u64(kmer_rc, shape_mask_rev);
+        }
+        else {
+            kernel = kmer;
+            kernel_rev = kmer_rc;
+        }
+
+        minimiser = find_minimiser<1>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
         if(r1.contains(minimiser, minimiser_rank)) {
             size_t p = s1_select.select(minimiser_rank);
             size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
-            occurences += check<1>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+            occurences += check<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
         else {
-            minimiser = find_minimiser<2>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
+            minimiser = find_minimiser<2>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
             if(r2.contains(minimiser, minimiser_rank)) {
                 size_t p = s2_select.select(minimiser_rank);
                 size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
-                occurences += check<2>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+                occurences += check<2, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
             }
             else {
-                minimiser = find_minimiser<3>(kmer, kmer_rc, left_minimiser_position, right_minimiser_position);
-                if(r3.contains(minimiser, minimiser_rank)) {
-                    size_t p = s3_select.select(minimiser_rank);
-                    size_t no_minimiser = s3_select.select(minimiser_rank+1) - p;
-                    occurences += check<3>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
-                }
+                if constexpr (use_shape)
+                    occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
                 else
                     occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
             }
@@ -106,20 +99,92 @@ uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
     return occurences;
 }
 
+template<bool use_shape>
+uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
+{
+    uint64_t occurences = 0;
+
+    uint64_t* offsets = new uint64_t[m_thres3];
+    
+    uint64_t minimiser, minimiser_rank;
+    uint64_t kernel, kernel_rev;
+    size_t left_minimiser_position, right_minimiser_position;
+
+    for(uint64_t kmer : kmers) {
+        uint64_t kmer_rc = crc(kmer, window_size);
+
+        if constexpr (use_shape) {
+            kernel = (kmer & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape_overlap_left;
+            kmer = _pext_u64(kmer, shape_mask);
+            kmer_rc = _pext_u64(kmer_rc, shape_mask_rev);
+        }
+        else {
+            kernel = kmer;
+            kernel_rev = kmer_rc;
+        }
+
+        minimiser = find_minimiser<1>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+
+        if(r1.contains(minimiser, minimiser_rank)) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+            occurences += check<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else {
+            minimiser = find_minimiser<2>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+            if(r2.contains(minimiser, minimiser_rank)) {
+                size_t p = s2_select.select(minimiser_rank);
+                size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
+                occurences += check<2, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+            }
+            else {
+                minimiser = find_minimiser<3>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+                if(r3.contains(minimiser, minimiser_rank)) {
+                    size_t p = s3_select.select(minimiser_rank);
+                    size_t no_minimiser = s3_select.select(minimiser_rank+1) - p;
+                    occurences += check<3, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+                }
+                else {
+                    if constexpr (use_shape)
+                        occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
+                    else
+                        occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+                }
+            }
+        }
+    }
+
+    delete[] offsets;
+
+    return occurences;
+}
+
+
 uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers)
 {
+    bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
     if(level == 1)
-        return lookup1(kmers);
+        if(use_shape)
+            return lookup1<true>(kmers);
+        else
+            return lookup1<false>(kmers);
     else if(level == 2)
-        return lookup2(kmers);
+        if(use_shape)
+            return lookup2<true>(kmers);
+        else
+            return lookup2<false>(kmers);
     else if(level == 3)
-        return lookup3(kmers);
+        if(use_shape)
+            return lookup3<true>(kmers);
+        else
+            return lookup3<false>(kmers);
     else
         return 0;
 }
 
 
-template<int level>
+template<int level, bool use_shape>
 inline bool RSHash::check(const uint64_t kmer, const uint64_t kmer_rc,
     uint64_t* offsets, const size_t p, const size_t no_skmers,
     const size_t left_minimiser_position, const size_t right_minimiser_position)
@@ -142,17 +207,32 @@ inline bool RSHash::check(const uint64_t kmer, const uint64_t kmer_rc,
     }
 
     for(size_t i = 0; i < no_skmers; i++) {
-        const uint64_t o = offsets[i];
+        uint64_t offset = offsets[i];
+        uint64_t pos = span-1-left_minimiser_position;
+        uint64_t pos_rc = left_minimiser_position;
 
-        uint64_t hash_rc = get_word64(o + left_minimiser_position) & windowmask;
-        uint64_t hash_fwd = get_word64(o + span-1-left_minimiser_position) & windowmask;
+        uint64_t hash_fwd = get_word64(offset + pos - shape_overlap_right) & windowmask;
+        uint64_t hash_rc = get_word64(offset + pos_rc - shape_overlap_left) & windowmask;
+
+        if constexpr (use_shape) {
+            hash_fwd = _pext_u64(hash_fwd, shape_mask);
+            hash_rc = _pext_u64(hash_rc, shape_mask_rev);
+        }
 
         if(kmer == hash_fwd || kmer_rc == hash_rc)
             return true;
 
         if(left_minimiser_position != k-m1-right_minimiser_position) {
-            hash_fwd = get_word64(o + right_minimiser_position) & windowmask;
-            hash_rc = get_word64(o + span-1-right_minimiser_position) & windowmask;
+            pos = right_minimiser_position;
+            pos_rc = span-1-right_minimiser_position;
+
+            hash_fwd = get_word64(offset + pos - shape_overlap_right) & windowmask;
+            hash_rc = get_word64(offset + pos_rc - shape_overlap_left) & windowmask;
+
+            if constexpr (use_shape) {
+                hash_fwd = _pext_u64(hash_fwd, shape_mask);
+                hash_rc = _pext_u64(hash_rc, shape_mask_rev);
+            }
 
             if(kmer == hash_fwd || kmer_rc == hash_rc)
                 return true;
@@ -182,7 +262,7 @@ inline bool RSHash::extend_in_text(uint64_t &text_pos, uint64_t start, uint64_t 
         if(--text_pos >= start) {
             const uint64_t new_rank = get_base(text_pos);
             if constexpr (use_shape) {
-                window_rev = ((window_rev << 2) | new_rank) & windowmask;  // no & ?
+                window_rev = ((window_rev << 2) | new_rank);
                 return _pext_u64(window_rev, shape_mask_rev) == query_rc;
             }
             else
