@@ -131,9 +131,9 @@ private:
     template<bool use_shape>
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos2(uint64_t *, const uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos2(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level, bool use_shape>
     inline void locate_buffer(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
 
@@ -366,7 +366,7 @@ inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *
 
     for(uint64_t i = 0; i < N; i++) {
         uint64_t next_endpoint;
-        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i] + span) - 1, &next_endpoint);
+        endpositions[2*i] = endpoints.select(endpoints.rank(offsets[i]+span) - 1, &next_endpoint);
         endpositions[2*i+1] = next_endpoint;
     }
     

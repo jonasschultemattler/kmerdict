@@ -5,8 +5,8 @@
 
 
 template<int level, bool use_shape>
-inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset,
-    const uint64_t kmer, const uint64_t kmerrc, size_t &i, const size_t s,
+inline bool RSHash::report_minimiser_pos(uint64_t *buffer, uint64_t offset,
+    const uint64_t query, const uint64_t queryrc, size_t &i, const size_t s,
     const size_t minimiser_pos, const uint64_t start_pos, const uint64_t end_pos,
     std::vector<std::pair<uint64_t, bool>> &positions)
 {
@@ -18,41 +18,41 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, const uint64_t offset
     else if constexpr (level == 3)
         span = span3;
 
-    uint64_t candidate, candidate_rc;
-    uint64_t pos1 = span-1-minimiser_pos;
-    uint64_t pos2 = minimiser_pos;
-
+    uint64_t candidate, candidate_rc, pos, pos_rc;
     if constexpr (use_shape) {
-        pos1 -= 0;
-        pos2 += 0;
-        candidate = _pext_u64(buffer[s+pos1], shape_mask);
-        candidate_rc = _pext_u64(buffer[s+pos2], shape_mask_rev);
+        pos = overlap - shape_overlap_right + span-1-minimiser_pos;
+        pos_rc = overlap - shape_overlap_left + minimiser_pos;
+        offset -= overlap;
+        candidate = _pext_u64(buffer[s + pos], shape_mask);
+        candidate_rc = _pext_u64(buffer[s + pos_rc], shape_mask_rev);
     }
     else {
-        candidate = buffer[s+pos1];
-        candidate_rc = buffer[s+pos2];
+        pos = span-1-minimiser_pos;
+        pos_rc = minimiser_pos;
+        candidate = buffer[s + pos];
+        candidate_rc = buffer[s + pos_rc];
     }
 
-    if((candidate == kmer && offset + pos1 >= start_pos && offset + pos1 + window_size - 1 < end_pos) || 
-       (candidate_rc == kmerrc && offset + pos2 >= start_pos && offset + pos2 + window_size - 1 < end_pos)) {
+    if(candidate == query && offset + pos >= start_pos && offset + pos + window_size - 1 < end_pos) {
+        // forward = true;
+        // text_pos = offset + pos + window_size - 1;
         i++;
         return true;
     }
-    // for(size_t j = 0; j < span + 2*overlap; j++) {
-    //     if((_pext_u64(buffer[s+j], shape_mask) == kmer && offset + j >= start_pos && offset + j + window_size - 1 < end_pos) ||
-    //        (_pext_u64(buffer[s+j], shape_mask_rev) == kmerrc && offset + j >= start_pos && offset + j + window_size - 1 < end_pos)) {
-    //         i++;
-    //         return true;
-    //     }
-    // }
+    if(candidate_rc == queryrc && offset + pos_rc >= start_pos && offset + pos_rc + window_size - 1 < end_pos) {
+        // forward = false;
+        // text_pos = offset + pos_rc;
+        i++;
+        return true;
+    }
 
     return false;
 }
 
 
 template<int level, bool use_shape>
-inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offset,
-    const uint64_t kmer, const uint64_t kmerrc, size_t &i, const size_t s,
+inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, uint64_t offset,
+    const uint64_t query, const uint64_t queryrc, size_t &i, const size_t s,
     const size_t left_minimiser_pos, const size_t right_minimiser_pos,
     const uint64_t start_pos, const uint64_t end_pos,
     std::vector<std::pair<uint64_t, bool>> &positions)
@@ -66,39 +66,56 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, const uint64_t offse
         span = span3;
 
     uint64_t left_candidate, left_candidate_rc, right_candidate, right_candidate_rc;
-    uint64_t left_pos1 = span-1-left_minimiser_pos;
-    uint64_t left_pos2 = left_minimiser_pos;
-    uint64_t right_pos1 = right_minimiser_pos;
-    uint64_t right_pos2 = span-1-right_minimiser_pos;
-
+    uint64_t left_pos, left_pos_rc, right_pos, right_pos_rc;
     if constexpr (use_shape) {
-        left_pos1 -= 0;
-        left_pos2 += 0;
-        right_pos1 -= 0;
-        right_pos2 += 0;
-        left_candidate = _pext_u64(buffer[s+left_pos1], shape_mask);
-        left_candidate_rc = _pext_u64(buffer[s+left_pos2], shape_mask_rev);
-        right_candidate = _pext_u64(buffer[s+right_pos1], shape_mask);
-        right_candidate_rc = _pext_u64(buffer[s+right_pos2], shape_mask_rev);
+        left_pos = overlap - shape_overlap_right + span-1-left_minimiser_pos;
+        left_pos_rc = overlap - shape_overlap_left + left_minimiser_pos;
+        right_pos = overlap - shape_overlap_right + right_minimiser_pos;
+        right_pos_rc = overlap - shape_overlap_left + span-1-right_minimiser_pos;
+        left_candidate = _pext_u64(buffer[s + left_pos], shape_mask);
+        left_candidate_rc = _pext_u64(buffer[s + left_pos_rc], shape_mask_rev);
+        right_candidate = _pext_u64(buffer[s + right_pos], shape_mask);
+        right_candidate_rc = _pext_u64(buffer[s + right_pos_rc], shape_mask_rev);
+        offset -= overlap;
     }
     else {
-        left_candidate = buffer[s+left_pos1];
-        left_candidate_rc = buffer[s+left_pos2];
-        right_candidate = buffer[s+right_pos1];
-        right_candidate_rc = buffer[s+right_pos2];
+        left_pos = span-1-left_minimiser_pos;
+        left_pos_rc = left_minimiser_pos;
+        right_pos = right_minimiser_pos;
+        right_pos_rc = span-1-right_minimiser_pos;
+        left_candidate = buffer[s + left_pos];
+        left_candidate_rc = buffer[s + left_pos_rc];
+        right_candidate = buffer[s + right_pos];
+        right_candidate_rc = buffer[s + right_pos_rc];
     }
 
-    if((left_candidate == kmer && offset + left_pos1 >= start_pos && offset + left_pos1+window_size-1 < end_pos) ||
-       (left_candidate_rc == kmerrc && offset + left_pos2 >= start_pos && offset + left_pos2+window_size-1 < end_pos) ||
-       (right_candidate == kmer && offset + right_pos1 >= start_pos && offset + right_pos1+window_size-1 < end_pos) ||
-       (right_candidate_rc == kmerrc && offset + right_pos2 >= start_pos && offset + right_pos2+window_size-1 < end_pos)) {
+    if(left_candidate == query && offset + left_pos >= start_pos && offset + left_pos + window_size - 1 < end_pos) {
+        // forward = true;
+        // text_pos = offset + left_pos + window_size - 1;
+        i++;
+        return true;
+    }
+    if(left_candidate_rc == queryrc && offset + left_pos_rc >= start_pos && offset + left_pos_rc + window_size - 1 < end_pos) {
+        // forward = false;
+        // text_pos = offset + left_pos_rc;
+        i++;
+        return true;
+    }
+    if(right_candidate == query && offset + right_pos >= start_pos && offset + right_pos + window_size - 1 < end_pos) {
+        // forward = true;
+        // text_pos = offset + right_pos + window_size - 1;
+        i++;
+        return true;
+    }
+    if(right_candidate_rc == queryrc && offset + right_pos_rc >= start_pos && offset + right_pos_rc + window_size - 1 < end_pos) {
+        // forward = false;
+        // text_pos = offset + right_pos_rc;
         i++;
         return true;
     }
 
     return false;
 }
-
 
 
 template<int level, bool use_shape>
@@ -129,7 +146,7 @@ inline void RSHash::locate_buffer(uint64_t *buffer, uint64_t *offsets, uint64_t 
             found |= report_minimiser_pos2<level, use_shape>(buffer, offsets[i], query, queryrc, found_positions, s, left_minimiser_pos, right_minimiser_pos, sequence_ends[2*i], sequence_ends[2*i+1], positions);
             s += span;
             if constexpr (use_shape)
-                s += 2*overlap;
+                s += overlap;
         }
     }
     else {
@@ -137,15 +154,9 @@ inline void RSHash::locate_buffer(uint64_t *buffer, uint64_t *offsets, uint64_t 
             found |= report_minimiser_pos<level, use_shape>(buffer, offsets[i], query, queryrc, found_positions, s, left_minimiser_pos, sequence_ends[2*i], sequence_ends[2*i+1], positions);
             s += span;
             if constexpr (use_shape)
-                s += 2*overlap;
+                s += overlap;
         }
     }
-    // for(size_t i = 0; i < no_minimiser; i++) {
-    //     found |= report_minimiser_pos<level, use_shape>(buffer, offsets[i], query, queryrc, found_positions, s, left_minimiser_pos, sequence_ends[2*i], sequence_ends[2*i+1], positions);
-    //     s += span;
-    //     if constexpr (use_shape)
-    //         s += 2*overlap;
-    // }
     
     found_kmers += found;
 }
@@ -187,7 +198,7 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
     uint64_t current_neg_minimiser=std::numeric_limits<uint64_t>::max();
     uint64_t* offsets = new uint64_t[m_thres1];
     uint64_t* sequence_ends = new uint64_t[2*m_thres1];
-    uint64_t* kmer_buffer = new uint64_t[m_thres1 * (span1 + 2*overlap)];
+    uint64_t* kmer_buffer = new uint64_t[m_thres1 * (span1 + overlap)];
     size_t no_minimiser;
     uint64_t minimiser, minimiser_rank;
     size_t left_minimiser_position, right_minimiser_position;
@@ -227,11 +238,29 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
             current_pos_minimiser = minimiser;
         }
         else {
-            if (auto it = hashmap.find(std::min<uint64_t>(kmer, kmer_rc)); it != hashmap.end()) {
-                for(auto pos : it->second)
-                    found_positions++;
-                found_kmers++;
+            if constexpr (use_shape) {
+                bool found = false;
+                if (auto it = hashmap.find(kmer); it != hashmap.end()) {
+                    for(auto pos : it->second)
+                        found_positions++;
+                    found = true;
+                }   
+                if (auto it = hashmap_rc.find(kmer_rc); it != hashmap_rc.end()) {
+                    for(auto pos : it->second)
+                        found_positions++;
+                    found = true;
+                }
+                found_kmers += found;
             }
+            else {
+                const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
+                if (auto it = hashmap.find(canonical_kmer); it != hashmap.end()) {
+                    for(auto pos : it->second)
+                        found_positions++;
+                    found_kmers++;
+                }
+            }
+            
             current_neg_minimiser = minimiser;
         }
 
@@ -255,8 +284,8 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
     uint64_t current_neg_minimiser2=std::numeric_limits<uint64_t>::max();
     uint64_t* offsets1 = new uint64_t[m_thres1];
     uint64_t* offsets2 = new uint64_t[m_thres2];
-    uint64_t* kmer_buffer1 = new uint64_t[(m_thres1) * (span1 + 2*overlap)];
-    uint64_t* kmer_buffer2 = new uint64_t[(m_thres2) * (span2 + 2*overlap)];
+    uint64_t* kmer_buffer1 = new uint64_t[(m_thres1) * (span1 + overlap)];
+    uint64_t* kmer_buffer2 = new uint64_t[(m_thres2) * (span2 + overlap)];
     uint64_t* sequence_ends1 = new uint64_t[2*m_thres1];
     uint64_t* sequence_ends2 = new uint64_t[2*m_thres2];
     size_t no_minimiser1, no_minimiser2;
@@ -324,10 +353,27 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
                     current_neg_minimiser1 = minimiser1;
                 }
                 else {
-                    if (auto it = hashmap.find(std::min<uint64_t>(kmer, kmer_rc)); it != hashmap.end()) {
-                        for(auto pos : it->second)
-                            found_positions++;
-                        found_kmers++;
+                    if constexpr (use_shape) {
+                        bool found = false;
+                        if (auto it = hashmap.find(kmer); it != hashmap.end()) {
+                            for(auto pos : it->second)
+                                found_positions++;
+                            found = true;
+                        }   
+                        if (auto it = hashmap_rc.find(kmer_rc); it != hashmap_rc.end()) {
+                            for(auto pos : it->second)
+                                found_positions++;
+                            found = true;
+                        }
+                        found_kmers += found;
+                    }
+                    else {
+                        const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
+                        if (auto it = hashmap.find(canonical_kmer); it != hashmap.end()) {
+                            for(auto pos : it->second)
+                                found_positions++;
+                            found_kmers++;
+                        }
                     }
                     current_neg_minimiser1 = minimiser1;
                     current_neg_minimiser2 = minimiser2;
@@ -359,9 +405,9 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
     uint64_t* offsets1 = new uint64_t[m_thres1];
     uint64_t* offsets2 = new uint64_t[m_thres2];
     uint64_t* offsets3 = new uint64_t[m_thres3];
-    uint64_t* kmer_buffer1 = new uint64_t[(m_thres1) * (span1 + 2*overlap)];
-    uint64_t* kmer_buffer2 = new uint64_t[(m_thres2) * (span2 + 2*overlap)];
-    uint64_t* kmer_buffer3 = new uint64_t[(m_thres3) * (span3 + 2*overlap)];
+    uint64_t* kmer_buffer1 = new uint64_t[(m_thres1) * (span1 + overlap)];
+    uint64_t* kmer_buffer2 = new uint64_t[(m_thres2) * (span2 + overlap)];
+    uint64_t* kmer_buffer3 = new uint64_t[(m_thres3) * (span3 + overlap)];
     uint64_t* sequence_ends1 = new uint64_t[2*m_thres1];
     uint64_t* sequence_ends2 = new uint64_t[2*m_thres2];
     uint64_t* sequence_ends3 = new uint64_t[2*m_thres3];
@@ -458,10 +504,27 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
                         current_neg_minimiser2 = minimiser2;
                     }
                     else {
-                        if (auto it = hashmap.find(std::min<uint64_t>(kmer, kmer_rc)); it != hashmap.end()) {
-                            for(auto pos : it->second)
-                                found_positions++;
-                            found_kmers++;
+                        if constexpr (use_shape) {
+                            bool found = false;
+                            if (auto it = hashmap.find(kmer); it != hashmap.end()) {
+                                for(auto pos : it->second)
+                                    found_positions++;
+                                found = true;
+                            }   
+                            if (auto it = hashmap_rc.find(kmer_rc); it != hashmap_rc.end()) {
+                                for(auto pos : it->second)
+                                    found_positions++;
+                                found = true;
+                            }
+                            found_kmers += found;
+                        }
+                        else {
+                            const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
+                            if (auto it = hashmap.find(canonical_kmer); it != hashmap.end()) {
+                                for(auto pos : it->second)
+                                    found_positions++;
+                                found_kmers++;
+                            }
                         }
                         current_neg_minimiser1 = minimiser1;
                         current_neg_minimiser2 = minimiser2;
