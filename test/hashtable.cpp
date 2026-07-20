@@ -123,14 +123,6 @@ int main(int argc, char** argv)
                 //     found_kmers++;
                 //     // found_positions += it->second;
                 // }
-                // else if (auto it = ht.find(_pext_u64(window.value, shape_obj.mask_rev)); it != ht.end()) {
-                //     found_kmers++;
-                //     // found_positions += it->second;
-                // }
-                // else if (auto it = ht.find(_pext_u64(window.value_rev, shape_obj.mask)); it != ht.end()) {
-                //     found_kmers++;
-                //     // found_positions += it->second;
-                // }
                 kmers++;
             }
         }
@@ -159,6 +151,8 @@ int main(int argc, char** argv)
     std::cout << "num_positive_kmers = " << found_kmers << " (" << (double) found_kmers/kmers*100 << "%)\n";
     std::cout << "num_positions = " << found_positions << '\n';
     std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
+
+    // report ht size
  
     return 0;
 }

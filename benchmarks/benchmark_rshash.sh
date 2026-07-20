@@ -65,9 +65,15 @@ run()
           echo $f >> $LOG
           echo $m1 $t1 $m2 $t2 $m3 $t3 >> $LOG
 
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc > OUT 2>&1
           # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
-          /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc -t 255 > OUT 2>&1
-
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc -t 255 > OUT 2>&1
+          /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 2147483641  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 2147483641  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 2147483647  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 1610612729  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 1610612733  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          
           cat OUT >> $LOG
 
           file_size=$(stat -c%s "${BASENAME}_.dict")
