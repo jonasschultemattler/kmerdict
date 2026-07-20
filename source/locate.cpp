@@ -4,6 +4,244 @@
 #include "rshash.hpp"
 
 
+uint64_t RSHash::locate(const std::vector<uint64_t> &kmers)
+{
+    bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
+    if(level == 1)
+        if(use_shape)
+            return locate1<true>(kmers);
+        else
+            return locate1<false>(kmers);
+    else if(level == 2)
+        if(use_shape)
+            return locate2<true>(kmers);
+        else
+            return locate2<false>(kmers);
+    else if(level == 3)
+        if(use_shape)
+            return locate3<true>(kmers);
+        else
+            return locate3<false>(kmers);
+    else
+        return 0;
+}
+
+
+template<bool use_shape>
+uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers)
+{
+    uint64_t positions = 0;
+    uint64_t* offsets = new uint64_t[m_thres1];
+    uint64_t minimiser, minimiser_rank;
+    uint64_t kernel, kernel_rev;
+    size_t left_minimiser_position, right_minimiser_position;
+
+    for(uint64_t kmer : kmers) {
+        uint64_t kmer_rc = crc(kmer, window_size);
+
+        if constexpr (use_shape) {
+            kernel = (kmer & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape_overlap_left;
+            kmer = _pext_u64(kmer, shape_mask);
+            kmer_rc = _pext_u64(kmer_rc, shape_mask_rev);
+        }
+        else {
+            kernel = kmer;
+            kernel_rev = kmer_rc;
+        }
+
+        minimiser = find_minimiser<1>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+        if(r1.contains(minimiser, minimiser_rank)) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+            positions += check_pos<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else {
+            if constexpr (use_shape)
+                positions += hashmap[kmer].size() + hashmap_rc[kmer_rc].size();
+            else
+                positions += hashmap[std::min<uint64_t>(kmer, kmer_rc)].size();
+        }
+    }
+
+    delete[] offsets;
+
+    return positions;
+}
+
+template<bool use_shape>
+uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers)
+{
+    uint64_t positions = 0;
+    uint64_t* offsets = new uint64_t[m_thres2];
+    uint64_t minimiser, minimiser_rank;
+    uint64_t kernel, kernel_rev;
+    size_t left_minimiser_position, right_minimiser_position;
+
+    for(uint64_t kmer : kmers) {
+        uint64_t kmer_rc = crc(kmer, window_size);
+
+        if constexpr (use_shape) {
+            kernel = (kmer & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape_overlap_left;
+            kmer = _pext_u64(kmer, shape_mask);
+            kmer_rc = _pext_u64(kmer_rc, shape_mask_rev);
+        }
+        else {
+            kernel = kmer;
+            kernel_rev = kmer_rc;
+        }
+
+        minimiser = find_minimiser<1>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+        if(r1.contains(minimiser, minimiser_rank)) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+            positions += check_pos<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else {
+            minimiser = find_minimiser<2>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+            if(r2.contains(minimiser, minimiser_rank)) {
+                size_t p = s2_select.select(minimiser_rank);
+                size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
+                positions += check_pos<2, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+            }
+            else {
+                if constexpr (use_shape)
+                    positions += hashmap[kmer].size() + hashmap_rc[kmer_rc].size();
+                else
+                    positions += hashmap[std::min<uint64_t>(kmer, kmer_rc)].size();
+            }
+        }
+    }
+
+    delete[] offsets;
+
+    return positions;
+}
+
+template<bool use_shape>
+uint64_t RSHash::locate3(const std::vector<uint64_t> &kmers)
+{
+    uint64_t positions = 0;
+    uint64_t* offsets = new uint64_t[m_thres3];
+    uint64_t minimiser, minimiser_rank;
+    uint64_t kernel, kernel_rev;
+    size_t left_minimiser_position, right_minimiser_position;
+
+    for(uint64_t kmer : kmers) {
+        uint64_t kmer_rc = crc(kmer, window_size);
+
+        if constexpr (use_shape) {
+            kernel = (kmer & kernel_mask) >> 2*shape_overlap_right;
+            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape_overlap_left;
+            kmer = _pext_u64(kmer, shape_mask);
+            kmer_rc = _pext_u64(kmer_rc, shape_mask_rev);
+        }
+        else {
+            kernel = kmer;
+            kernel_rev = kmer_rc;
+        }
+
+        minimiser = find_minimiser<1>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+
+        if(r1.contains(minimiser, minimiser_rank)) {
+            size_t p = s1_select.select(minimiser_rank);
+            size_t no_minimiser = s1_select.select(minimiser_rank+1) - p;
+            positions += check_pos<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+        }
+        else {
+            minimiser = find_minimiser<2>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+            if(r2.contains(minimiser, minimiser_rank)) {
+                size_t p = s2_select.select(minimiser_rank);
+                size_t no_minimiser = s2_select.select(minimiser_rank+1) - p;
+                positions += check_pos<2, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+            }
+            else {
+                minimiser = find_minimiser<3>(kernel, kernel_rev, left_minimiser_position, right_minimiser_position);
+                if(r3.contains(minimiser, minimiser_rank)) {
+                    size_t p = s3_select.select(minimiser_rank);
+                    size_t no_minimiser = s3_select.select(minimiser_rank+1) - p;
+                    positions += check_pos<3, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
+                }
+                else {
+                    if constexpr (use_shape)
+                        positions += hashmap[kmer].size() + hashmap_rc[kmer_rc].size();
+                    else
+                        positions += hashmap[std::min<uint64_t>(kmer, kmer_rc)].size();
+                }
+            }
+        }
+    }
+
+    delete[] offsets;
+
+    return positions;
+}
+
+
+template<int level, bool use_shape>
+inline uint64_t RSHash::check_pos(const uint64_t kmer, const uint64_t kmer_rc,
+    uint64_t* offsets, const size_t p, const size_t no_skmers,
+    const size_t left_minimiser_position, const size_t right_minimiser_position)
+{
+    size_t span;
+    if constexpr (level == 1)
+        span = span1;
+    if constexpr (level == 2)
+        span = span2;
+    if constexpr (level == 3)
+        span = span3;
+    
+    for(size_t i = 0; i < no_skmers; i++) {
+        if constexpr (level == 1)
+            offsets[i] = offsets1.access(p+i)-span+1;
+        if constexpr (level == 2)
+            offsets[i] = offsets2.access(p+i)-span+1;
+        if constexpr (level == 3)
+            offsets[i] = offsets3.access(p+i)-span+1;
+    }
+
+    uint64_t positions = 0;
+    for(size_t i = 0; i < no_skmers; i++) {
+        uint64_t offset = offsets[i];
+        uint64_t pos = span-1-left_minimiser_position;
+        uint64_t pos_rc = left_minimiser_position;
+
+        uint64_t hash_fwd = get_word64(offset + pos - shape_overlap_right) & windowmask;
+        uint64_t hash_rc = get_word64(offset + pos_rc - shape_overlap_left) & windowmask;
+
+        if constexpr (use_shape) {
+            hash_fwd = _pext_u64(hash_fwd, shape_mask);
+            hash_rc = _pext_u64(hash_rc, shape_mask_rev);
+        }
+
+        positions += kmer == hash_fwd;
+        positions += kmer_rc == hash_rc;
+
+        if(left_minimiser_position != k-m1-right_minimiser_position) {
+            pos = right_minimiser_position;
+            pos_rc = span-1-right_minimiser_position;
+
+            hash_fwd = get_word64(offset + pos - shape_overlap_right) & windowmask;
+            hash_rc = get_word64(offset + pos_rc - shape_overlap_left) & windowmask;
+
+            if constexpr (use_shape) {
+                hash_fwd = _pext_u64(hash_fwd, shape_mask);
+                hash_rc = _pext_u64(hash_rc, shape_mask_rev);
+            }
+
+            positions += kmer == hash_fwd;
+            positions += kmer_rc == hash_rc;
+        }
+
+    }
+
+    return positions;
+}
+
+
+
+
 template<int level, bool use_shape>
 inline bool RSHash::report_minimiser_pos(uint64_t *buffer, uint64_t offset,
     const uint64_t query, const uint64_t queryrc, size_t &i, const size_t s,
@@ -239,23 +477,21 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
         }
         else {
             if constexpr (use_shape) {
-                bool found = false;
-                if (auto it = hashmap.find(kmer); it != hashmap.end()) {
-                    for(auto pos : it->second)
+                if (auto it = hashmap.find(kmer); !it.empty()) {
+                    for (uint32_t v : it)
                         found_positions++;
-                    found = true;
-                }   
-                if (auto it = hashmap_rc.find(kmer_rc); it != hashmap_rc.end()) {
-                    for(auto pos : it->second)
-                        found_positions++;
-                    found = true;
+                    found_kmers++;
                 }
-                found_kmers += found;
+                else if (auto it = hashmap_rc.find(kmer_rc); !it.empty()) {
+                    for (uint32_t v : it)
+                        found_positions++;
+                    found_kmers++;
+                }
             }
             else {
                 const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
-                if (auto it = hashmap.find(canonical_kmer); it != hashmap.end()) {
-                    for(auto pos : it->second)
+                if (auto it = hashmap.find(canonical_kmer); !it.empty()) {
+                    for (uint32_t v : it)
                         found_positions++;
                     found_kmers++;
                 }
@@ -354,23 +590,21 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
                 }
                 else {
                     if constexpr (use_shape) {
-                        bool found = false;
-                        if (auto it = hashmap.find(kmer); it != hashmap.end()) {
-                            for(auto pos : it->second)
+                        if (auto it = hashmap.find(kmer); !it.empty()) {
+                            for (uint32_t v : it)
                                 found_positions++;
-                            found = true;
-                        }   
-                        if (auto it = hashmap_rc.find(kmer_rc); it != hashmap_rc.end()) {
-                            for(auto pos : it->second)
-                                found_positions++;
-                            found = true;
+                            found_kmers++;
                         }
-                        found_kmers += found;
+                        else if (auto it = hashmap_rc.find(kmer_rc); !it.empty()) {
+                            for (uint32_t v : it)
+                                found_positions++;
+                            found_kmers++;
+                        }
                     }
                     else {
                         const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
-                        if (auto it = hashmap.find(canonical_kmer); it != hashmap.end()) {
-                            for(auto pos : it->second)
+                        if (auto it = hashmap.find(canonical_kmer); !it.empty()) {
+                            for (uint32_t v : it)
                                 found_positions++;
                             found_kmers++;
                         }
@@ -505,23 +739,21 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
                     }
                     else {
                         if constexpr (use_shape) {
-                            bool found = false;
-                            if (auto it = hashmap.find(kmer); it != hashmap.end()) {
-                                for(auto pos : it->second)
+                            if (auto it = hashmap.find(kmer); !it.empty()) {
+                                for (uint32_t v : it)
                                     found_positions++;
-                                found = true;
-                            }   
-                            if (auto it = hashmap_rc.find(kmer_rc); it != hashmap_rc.end()) {
-                                for(auto pos : it->second)
-                                    found_positions++;
-                                found = true;
+                                found_kmers++;
                             }
-                            found_kmers += found;
+                            else if (auto it = hashmap_rc.find(kmer_rc); !it.empty()) {
+                                for (uint32_t v : it)
+                                    found_positions++;
+                                found_kmers++;
+                            }
                         }
                         else {
                             const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
-                            if (auto it = hashmap.find(canonical_kmer); it != hashmap.end()) {
-                                for(auto pos : it->second)
+                            if (auto it = hashmap.find(canonical_kmer); !it.empty()) {
+                                for (uint32_t v : it)
                                     found_positions++;
                                 found_kmers++;
                             }

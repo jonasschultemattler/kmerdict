@@ -4,7 +4,7 @@
 #include "rshash.hpp"
 
 
-template<bool use_shape>
+template<bool use_shape, bool locate>
 uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
 {
     uint64_t occurences = 0;
@@ -35,10 +35,18 @@ uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
             occurences += check<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
         else {
-            if constexpr (use_shape)
-                occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
-            else
-                occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+            if constexpr (locate) {
+                if constexpr (use_shape)
+                    occurences += hashmap.contains(kmer) || hashmap_rc.contains(kmer_rc);
+                else
+                    occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+            }
+            else {
+                if constexpr (use_shape)
+                    occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
+                else
+                    occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+            }
         }
     }
 
@@ -47,7 +55,7 @@ uint64_t RSHash::lookup1(const std::vector<uint64_t> &kmers)
     return occurences;
 }
 
-template<bool use_shape>
+template<bool use_shape, bool locate>
 uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
 {
     uint64_t occurences = 0;
@@ -86,10 +94,18 @@ uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
                 occurences += check<2, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
             }
             else {
-                if constexpr (use_shape)
-                    occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
-                else
-                    occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+                if constexpr (locate) {
+                    if constexpr (use_shape)
+                        occurences += hashmap.contains(kmer) || hashmap_rc.contains(kmer_rc);
+                    else
+                        occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+                }
+                else {
+                    if constexpr (use_shape)
+                        occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
+                    else
+                        occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+                }
             }
         }
     }
@@ -99,7 +115,7 @@ uint64_t RSHash::lookup2(const std::vector<uint64_t> &kmers)
     return occurences;
 }
 
-template<bool use_shape>
+template<bool use_shape, bool locate>
 uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
 {
     uint64_t occurences = 0;
@@ -146,10 +162,18 @@ uint64_t RSHash::lookup3(const std::vector<uint64_t> &kmers)
                     occurences += check<3, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
                 }
                 else {
-                    if constexpr (use_shape)
-                        occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
-                    else
-                        occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+                    if constexpr (locate) {
+                        if constexpr (use_shape)
+                            occurences += hashmap.contains(kmer) || hashmap_rc.contains(kmer_rc);
+                        else
+                            occurences += hashmap.contains(std::min<uint64_t>(kmer, kmer_rc));
+                    }
+                    else {
+                        if constexpr (use_shape)
+                            occurences += hashset.contains(kmer) || hashset_rc.contains(kmer_rc);
+                        else
+                            occurences += hashset.contains(std::min<uint64_t>(kmer, kmer_rc));
+                    }
                 }
             }
         }
@@ -166,19 +190,37 @@ uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers)
     bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
     if(level == 1)
         if(use_shape)
-            return lookup1<true>(kmers);
+            if(loc)
+                return lookup1<true, true>(kmers);
+            else
+                return lookup1<true, false>(kmers);
         else
-            return lookup1<false>(kmers);
+            if(loc)
+                return lookup1<false, true>(kmers);
+            else
+                return lookup1<false, false>(kmers);
     else if(level == 2)
         if(use_shape)
-            return lookup2<true>(kmers);
+            if(loc)
+                return lookup2<true, true>(kmers);
+            else
+                return lookup2<true, false>(kmers);
         else
-            return lookup2<false>(kmers);
+            if(loc)
+                return lookup2<false, true>(kmers);
+            else
+                return lookup2<false, false>(kmers);
     else if(level == 3)
         if(use_shape)
-            return lookup3<true>(kmers);
+            if(loc)
+                return lookup3<true, true>(kmers);
+            else
+                return lookup3<true, false>(kmers);
         else
-            return lookup3<false>(kmers);
+            if(loc)
+                return lookup3<false, true>(kmers);
+            else
+                return lookup3<false, false>(kmers);
     else
         return 0;
 }
@@ -444,28 +486,46 @@ uint64_t RSHash::streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>
     bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
     if(level == 1) {
         if(use_shape)
-            return streaming_lookup1<true>(query, extensions);
+            if(loc)
+                return streaming_lookup1<true, true>(query, extensions);
+            else
+                return streaming_lookup1<true, false>(query, extensions);
         else
-            return streaming_lookup1<false>(query, extensions);
+            if(loc)
+                return streaming_lookup1<false, true>(query, extensions);
+            else
+                return streaming_lookup1<false, false>(query, extensions);
     }
     else if(level == 2) {
         if(use_shape)
-            return streaming_lookup2<true>(query, extensions);
+            if(loc)
+                return streaming_lookup2<true, true>(query, extensions);
+            else
+                return streaming_lookup2<true, false>(query, extensions);
         else
-            return streaming_lookup2<false>(query, extensions);
+            if(loc)
+                return streaming_lookup2<false, true>(query, extensions);
+            else
+                return streaming_lookup2<false, false>(query, extensions);
     }
     else if(level == 3) {
         if(use_shape)
-            return streaming_lookup3<true>(query, extensions);
+            if(loc)
+                return streaming_lookup3<true, true>(query, extensions);
+            else
+                return streaming_lookup3<true, false>(query, extensions);
         else
-            return streaming_lookup3<false>(query, extensions);
+            if(loc)
+                return streaming_lookup3<false, true>(query, extensions);
+            else
+                return streaming_lookup3<false, false>(query, extensions);
     }
     else
         return 0;
 }
 
 
-template<bool use_shape>
+template<bool use_shape, bool locate>
 uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
 {
     constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
@@ -549,7 +609,7 @@ uint64_t RSHash::streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4
     return occurences;
 }
 
-template<bool use_shape>
+template<bool use_shape, bool locate>
 uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
 {
     constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();
@@ -666,7 +726,7 @@ uint64_t RSHash::streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4
     return occurences;
 }
 
-template<bool use_shape>
+template<bool use_shape, bool locate>
 uint64_t RSHash::streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions)
 {
     constexpr uint64_t INF = std::numeric_limits<uint64_t>::max();

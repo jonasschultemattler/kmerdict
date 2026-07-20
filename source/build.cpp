@@ -311,6 +311,7 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
                 }
             }
         }
+        FlatMapBuilder hashmap_builder, hashmap_rc_builder;
         for(const auto & skmer_info : freq_skmers) {
             size_t s = (skmer_info.start > overlap) ? skmer_info.start - overlap : 0;
             size_t e = std::min(skmer_info.end + overlap, input[skmer_info.seq_id].size()); // + overlap?
@@ -319,31 +320,33 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
             uint32_t p = 0;
             for(auto && kmer : skmer | rshash::views::kmerview({.window_size = window_size})) {
                 if(use_shape) { // todo: symmetric shapes are canonical
-                    uint64_t shape = _pext_u64(kmer.value, shape_mask);
-                    uint64_t shape_rc = _pext_u64(kmer.value, shape_mask_rev);
+                    const uint64_t shape = _pext_u64(kmer.value, shape_mask);
+                    const uint64_t shape_rc = _pext_u64(kmer.value, shape_mask_rev);
                     if(threshold > 0) {
                         if(kmer_counts[shape] < threshold)
-                            hashmap[shape].push_back(skmer_pos + p);
+                            hashmap_builder.add(shape, skmer_pos + p);
                         if(kmer_counts[shape_rc] < threshold)
-                            hashmap_rc[shape_rc].push_back(skmer_pos + p);
+                            hashmap_rc_builder.add(shape_rc, skmer_pos + p);
                     }
                     else {
-                        hashmap[shape].push_back(skmer_pos + p);    
-                        hashmap_rc[shape_rc].push_back(skmer_pos + p);
+                        hashmap_builder.add(shape, skmer_pos + p);
+                        hashmap_rc_builder.add(shape_rc, skmer_pos + p);
                     }
                 }
                 else {
-                    uint64_t canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
+                    const uint64_t canonical_kmer = std::min<uint64_t>(kmer.value, kmer.value_rev);
                     if(threshold > 0) {
                         if(kmer_counts[canonical_kmer] < threshold)
-                            hashmap[canonical_kmer].push_back(skmer_pos + p);
+                            hashmap_builder.add(canonical_kmer, skmer_pos + p);
                     }
                     else
-                        hashmap[canonical_kmer].push_back(skmer_pos + p); 
+                        hashmap_builder.add(canonical_kmer, skmer_pos + p); 
                 }   
                 p++;
             }
         }
+        hashmap = std::move(hashmap_builder).build();
+        hashmap_rc = std::move(hashmap_rc_builder).build();
     }
     else {
         for(const auto & skmer_info : freq_skmers) {
@@ -353,8 +356,14 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
             // auto skmer = input[skmer_info.seq_id] | std::views::drop(skmer_info.start) | std::views::take(skmer_info.end - skmer_info.start);
             for(auto && kmer : skmer | rshash::views::kmerview({.window_size = window_size})) {
                 if(use_shape) { // todo: symmetric shapes are canonical
-                    hashset.insert(_pext_u64(kmer.value, shape_mask));
-                    hashset_rc.insert(_pext_u64(kmer.value, shape_mask_rev));
+                    const uint64_t shape = _pext_u64(kmer.value, shape_mask);
+                    const uint64_t shape_rc = _pext_u64(kmer.value, shape_mask_rev);
+                    // if(shape != shape_rc) {
+                        hashset.insert(shape);
+                        hashset_rc.insert(shape_rc);
+                    // }
+                    // else
+                    //     hashset.insert(shape);
                 }
                 else
                     hashset.insert(std::min<uint64_t>(kmer.value, kmer.value_rev));

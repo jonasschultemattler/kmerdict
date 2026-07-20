@@ -273,6 +273,66 @@ int main(int argc, char** argv)
         // std::cout << "neg_time_per_kmer = " << ns_per_kmer << '\n';
         std::cout << "neg_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
         std::cout << "neg_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)) ; }) / times.size()) << '\n';
+
+        if(index.has_locate()) {
+            std::cout << "bench locate...\n";
+
+            std::cout << "bench pos locate...\n";
+            round = 0;
+            error = 0.0;
+            lookup_time_sum = 0.0;
+            times.clear();
+
+            while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
+                kmers = index.rand_text_kmers(1000000);
+                t_start = std::chrono::high_resolution_clock::now();
+                found = index.locate(kmers);
+                t_stop = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
+                ns_per_kmer = (double) elapsed.count() / kmers.size();
+                lookup_time_sum += ns_per_kmer;
+                round++;
+                error += std::abs((lookup_time_sum/round) - ns_per_kmer);
+                times.push_back(ns_per_kmer);
+                std::cout << "round " << round << " time per kmer: " << ns_per_kmer << ", avg: " << (lookup_time_sum/round) << ", error: " << error/round << '\n';
+            }
+
+            std::cout << "==== locate:\n";
+            std::cout << "num_kmers = " << kmers.size() << '\n';
+            std::cout << "num_positive_positions = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
+            // std::cout << "locate_time_per_kmer = " << ns_per_kmer << '\n';
+            std::cout << "locate_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
+            std::cout << "locate_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
+
+
+            std::cout << "bench neg locate...\n";
+            round = 0;
+            error = 0.0;
+            lookup_time_sum = 0.0;
+            times.clear();
+
+            while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
+                kmers = rand_kmers(1000000, index.getk());
+                t_start = std::chrono::high_resolution_clock::now();
+                found = index.locate(kmers);
+                t_stop = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
+                ns_per_kmer = (double) elapsed.count() / kmers.size();
+                lookup_time_sum += ns_per_kmer;
+                round++;
+                error += std::abs((lookup_time_sum/round) - ns_per_kmer);
+                times.push_back(ns_per_kmer);
+                std::cout << "round " << round << " time per kmer: " << ns_per_kmer << ", avg: " << (lookup_time_sum/round) << ", error: " << error/round << '\n';
+            }
+
+            std::cout << "==== locate:\n";
+            std::cout << "num_kmers = " << kmers.size() << '\n';
+            std::cout << "num_negative_positions = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
+            // std::cout << "locate_time_per_kmer = " << ns_per_kmer << '\n';
+            std::cout << "locate_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
+            std::cout << "locate_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
+
+        }
     }
  
     return 0;

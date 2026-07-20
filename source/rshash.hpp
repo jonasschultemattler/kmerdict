@@ -8,6 +8,7 @@
 #include "minimiser_views.hpp"
 #include "shape_views.hpp"
 #include "util.hpp"
+#include "flat_map.hpp"
 
 using namespace seqan3::literals;
 using namespace seqan3::contrib::sdsl;
@@ -24,6 +25,10 @@ struct SkmerInfo {
     size_t end;
 };
 
+struct Range {
+    uint32_t offset;
+    uint32_t length;
+};
 
 typedef std::pair<uint64_t, uint32_t> MinimizerInfo32;
 typedef std::pair<uint64_t, uint64_t> MinimizerInfo64;
@@ -72,10 +77,8 @@ private:
     bit_vector s1, s2, s3;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select;
     bits::compact_vector offsets1, offsets2, offsets3;
-    gtl::flat_hash_set<uint64_t> hashset;
-    gtl::flat_hash_set<uint64_t> hashset_rc;
-    gtl::flat_hash_map<uint64_t, std::vector<uint32_t>> hashmap;
-    gtl::flat_hash_map<uint64_t, std::vector<uint32_t>> hashmap_rc;
+    gtl::flat_hash_set<uint64_t> hashset, hashset_rc;
+    FlatMap hashmap, hashmap_rc;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     template<int level, typename MinimizerT>
@@ -97,6 +100,8 @@ private:
     template<int level, bool use_shape>
     inline bool check(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
     template<int level, bool use_shape>
+    inline uint64_t check_pos(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
+    template<int level, bool use_shape>
     inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t);
     template<int level, bool use_shape>
     inline void fill_buffer2(uint64_t *, uint64_t *, uint64_t *, size_t, size_t);
@@ -112,11 +117,11 @@ private:
     const inline uint64_t get_word64(uint64_t pos);
     const inline uint64_t get_base(uint64_t pos);
     const inline void get_2words64(uint64_t pos, uint64_t &lo, uint64_t &hi);
-    template<bool use_shape>
+    template<bool use_shape, bool locate>
     uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    template<bool use_shape>
+    template<bool use_shape, bool locate>
     uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    template<bool use_shape>
+    template<bool use_shape, bool locate>
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     template<bool use_shape>
     size_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
@@ -124,12 +129,18 @@ private:
     size_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
     template<bool use_shape>
     size_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
-    template<bool use_shape>
+    template<bool use_shape, bool locate>
     uint64_t lookup1(const std::vector<uint64_t>&);
-    template<bool use_shape>
+    template<bool use_shape, bool locate>
     uint64_t lookup2(const std::vector<uint64_t>&);
-    template<bool use_shape>
+    template<bool use_shape, bool locate>
     uint64_t lookup3(const std::vector<uint64_t>&);
+    template<bool use_shape>
+    uint64_t locate1(const std::vector<uint64_t>&);
+    template<bool use_shape>
+    uint64_t locate2(const std::vector<uint64_t>&);
+    template<bool use_shape>
+    uint64_t locate3(const std::vector<uint64_t>&);
     template<int level, bool use_shape>
     inline bool report_minimiser_pos(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
     template<int level, bool use_shape>
@@ -184,6 +195,7 @@ public:
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
     const inline uint64_t access(const size_t);
     uint64_t lookup(const std::vector<uint64_t>&);
+    uint64_t locate(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     size_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
@@ -203,16 +215,24 @@ public:
         const uint64_t no_skmers3 = s3.size();
         size_t ht_space, kmers_ht;
         if(loc) {
-            // ht_space = hashmap.capacity()*(sizeof(uint64_t) + sizeof(uint32_t) + 1)*8;
-            size_t total = sizeof(hashmap) +  hashmap.capacity()*sizeof(decltype(hashmap)::value_type);
-            for (const auto& [k, vec] : hashmap)
-                total += vec.capacity() * sizeof(uint32_t);
-            ht_space = total*8;
-            kmers_ht = hashmap.size();
+            if(shape.value != std::numeric_limits<uint32_t>::max()) {
+                ht_space = hashmap.memory_bits() + hashmap_rc.memory_bits();
+                kmers_ht = hashmap.size() + hashmap_rc.size();
+            }
+            else {
+                ht_space = hashmap.memory_bits();
+                kmers_ht = hashmap.size();
+            }
         }
         else {
-            ht_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8;
-            kmers_ht = hashset.size();
+            if(shape.value != std::numeric_limits<uint32_t>::max()) {
+                ht_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8 + hashset_rc.capacity()*(sizeof(uint64_t) + 1)*8;
+                kmers_ht = hashset.size() + hashset_rc.size();
+            }
+            else {
+                ht_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8;
+                kmers_ht = hashset.size();
+            }
         }
 
         std::cout << "====== report ======\n";

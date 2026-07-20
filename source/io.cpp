@@ -75,6 +75,37 @@ void load(Archive& ar, gtl::flat_hash_map<uint64_t, std::vector<uint32_t>>& map)
 } // namespace cereal
 
 
+template <class Archive>
+void save(Archive& ar, const FlatMap& map) {
+    ar(static_cast<std::size_t>(map.index.size()));
+
+    for (const auto& [key, entry] : map.index)
+        ar(key, entry.offset, entry.size);
+
+    ar(map.values);
+}
+
+template <class Archive>
+void load(Archive& ar, FlatMap& map) {
+    std::size_t size;
+    ar(size);
+
+    map.index.clear();
+    map.index.reserve(size);
+
+    for (std::size_t i = 0; i < size; ++i) {
+        uint64_t key;
+        uint32_t offset;
+        uint32_t value_count;
+
+        ar(key, offset, value_count);
+
+        map.index.emplace(key, FlatMap::Entry{.offset = offset, .size = value_count});
+    }
+
+    ar(map.values);
+}
+
 
 int RSHash::save(const std::filesystem::path &filepath) {
     std::ofstream out(filepath, std::ios::binary);
