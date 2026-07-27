@@ -6,7 +6,7 @@
 #include "compact_vector.hpp"
 #include "EliasFano.hpp"
 #include "minimiser_views.hpp"
-#include "shape_views.hpp"
+#include "shape.hpp"
 #include "util.hpp"
 #include "flat_map.hpp"
 

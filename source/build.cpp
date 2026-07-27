@@ -1,6 +1,5 @@
 #include "rshash.hpp"
 #include "minimiser_views.hpp"
-#include "shape_views.hpp"
 #include "kxsort.h"
 
 inline uint64_t mark_sequences(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &input, const size_t k,
@@ -380,8 +379,8 @@ void RSHash::fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>
                 if(use_shape) { // todo: symmetric shapes are canonical
                     const uint64_t shape = _pext_u64(kmer.value, shape_mask);
                     const uint64_t shape_rc = _pext_u64(kmer.value, shape_mask_rev);
-                        hashset.insert(shape);
-                        hashset_rc.insert(shape_rc);
+                    hashset.insert(shape);
+                    hashset_rc.insert(shape_rc);
                 }
                 else
                     hashset.insert(std::min<uint64_t>(kmer.value, kmer.value_rev));

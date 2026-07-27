@@ -53,7 +53,7 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
     parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
-    parser.add_option(args.t, sharg::config{.short_id = 't', .description = "threshold"});
+    parser.add_option(args.t, sharg::config{.short_id = 't', .description = "max k-mer/shape frequency threshold"});
     parser.add_option(args.shape, sharg::config{.long_id = "shape", .description = "shape value"});
     parser.add_flag(args.loc, sharg::config{.long_id = "loc", .description = "enable locate"});
     parser.add_flag(args.ht, sharg::config{.long_id = "ht", .description = "do not use hashtable on last level"});
