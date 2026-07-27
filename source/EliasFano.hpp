@@ -35,11 +35,6 @@
 #include <vector>
 #include <cereal/types/vector.hpp>
 
-#ifdef PARSEARCH
-#pragma message(">>> PARSEARCH is ENABLED in EliasFano")
-#else
-#pragma message(">>> PARSEARCH is DISABLED in EliasFano")
-#endif
 
 namespace sux::bits {
 
@@ -325,48 +320,141 @@ template <util::AllocType AT = util::AllocType::MALLOC> class EliasFano : public
 #endif
 	}
 
-	bool contains(const uint64_t x, uint64_t& rank_out) {
-    	if (num_ones == 0) {
-        	rank_out = 0;
+	bool contains(const uint64_t x)
+	{
+    	if (num_ones == 0)
         	return false;
-    	}
-    	if (x >= num_bits) {
-        	rank_out = num_ones;
+    	if (x >= num_bits)
         	return false;
-    	}
 
     	const uint64_t x_upper = x >> l;
     	const uint64_t x_lower = x & lower_l_bits_mask;
 
-    	int64_t pos = selectz_upper.selectZero(x_upper);
+    	const int64_t end_pos = selectz_upper.selectZero(x_upper);
+    	const uint64_t bucket_end = end_pos - x_upper;
 
-    	uint64_t rank = pos - x_upper;
+    	constexpr uint64_t LINEAR_THRESHOLD = 8;
+
+    	uint64_t rank = bucket_end;
     	uint64_t rank_times_l = rank * l;
+    	int64_t pos = end_pos;
 
-    	bool found = false;
-    	do {
-        	rank--;
-        	rank_times_l -= l;
-        	pos--;
-
-        	if (pos >= 0 && (upper_bits[pos / 64] & (1ULL << (pos % 64)))) {
-            	const uint64_t candidate_lower = get_bits(lower_bits, rank_times_l, l);
-
-            	if (candidate_lower == x_lower)
-                	found = true;
-
-            	if (candidate_lower < x_lower)
-                	break;
-        	}
-        	else
+    	for (uint64_t scanned = 0; scanned < LINEAR_THRESHOLD; ++scanned) {
+        	if (rank == 0)
             	break;
+
+        	--rank;
+        	rank_times_l -= l;
+        	--pos;
+
+        	if (!(upper_bits[pos >> 6] & (1ULL << (pos & 63))))
+            	return false;
+
+        	const uint64_t lower = get_bits(lower_bits, rank_times_l, l);
+        	if (lower == x_lower)
+            	return true;
+        	if (lower < x_lower)
+            	return false;
     	}
-		while (true);
 
-    	rank_out = ++rank;
+    	uint64_t bucket_begin;
+    	if (x_upper == 0) {
+        	bucket_begin = 0;
+    	}
+    	else {
+        	const int64_t prev_end_pos = selectz_upper.selectZero(x_upper - 1);
+        	bucket_begin = prev_end_pos - (x_upper - 1);
+    	}
 
-    	return found;
-	}
+    	uint64_t lo = bucket_begin;
+    	uint64_t hi = rank;
+
+    	while (lo < hi) {
+        	const uint64_t mid = lo + ((hi - lo) >> 1);
+        	const uint64_t lower = get_bits(lower_bits, mid * l, l);
+        	if (lower < x_lower)
+            	lo = mid + 1;
+        	else
+            	hi = mid;
+    	}
+
+    	if (lo == rank)
+        	return false;
+
+    	return get_bits(lower_bits, lo * l, l) == x_lower;
+}
+
+	bool contains(const uint64_t x, uint64_t& rank_out)
+	{
+    	if (num_ones == 0)
+        	return false;
+    	if (x >= num_bits)
+        	return false;
+
+    	const uint64_t x_upper = x >> l;
+    	const uint64_t x_lower = x & lower_l_bits_mask;
+
+    	const int64_t end_pos = selectz_upper.selectZero(x_upper);
+    	const uint64_t bucket_end = end_pos - x_upper;
+
+    	constexpr uint64_t LINEAR_THRESHOLD = 8;
+
+    	uint64_t rank = bucket_end;
+    	uint64_t rank_times_l = rank * l;
+    	int64_t pos = end_pos;
+
+    	for (uint64_t scanned = 0; scanned < LINEAR_THRESHOLD; ++scanned) {
+        	if (rank == 0)
+            	break;
+
+        	--rank;
+        	rank_times_l -= l;
+        	--pos;
+
+        	if (!(upper_bits[pos >> 6] & (1ULL << (pos & 63)))) {
+            	rank_out = rank + 1;
+            	return false;
+        	}
+
+        	const uint64_t lower = get_bits(lower_bits, rank_times_l, l);
+        	if (lower == x_lower) {
+            	rank_out = rank;
+            	return true;
+        	}
+        	if (lower < x_lower) {
+            	rank_out = rank + 1;
+            	return false;
+        	}
+    	}
+
+    	uint64_t bucket_begin;
+    	if (x_upper == 0) {
+        	bucket_begin = 0;
+    	}
+    	else {
+        	const int64_t prev_end_pos = selectz_upper.selectZero(x_upper - 1);
+        	bucket_begin = prev_end_pos - (x_upper - 1);
+    	}
+
+    	uint64_t lo = bucket_begin;
+    	uint64_t hi = rank;
+
+    	while (lo < hi) {
+        	const uint64_t mid = lo + ((hi - lo) >> 1);
+        	const uint64_t lower = get_bits(lower_bits, mid * l, l);
+        	if (lower < x_lower)
+            	lo = mid + 1;
+        	else
+            	hi = mid;
+    	}
+
+    	rank_out = lo;
+    	if (lo == rank)
+        	return false;
+
+    	return get_bits(lower_bits, lo * l, l) == x_lower;
+}
+
 
 
 	size_t select(const uint64_t rank) {
