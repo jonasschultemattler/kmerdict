@@ -36,6 +36,7 @@ struct cmd_arguments {
     uint16_t t{0};
     uint32_t shape{std::numeric_limits<uint32_t>::max()};
     bool loc{false};
+    bool ht{false};
 };
 
 void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
@@ -55,6 +56,7 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
     parser.add_option(args.t, sharg::config{.short_id = 't', .description = "threshold"});
     parser.add_option(args.shape, sharg::config{.long_id = "shape", .description = "shape value"});
     parser.add_flag(args.loc, sharg::config{.long_id = "loc", .description = "enable locate"});
+    parser.add_flag(args.ht, sharg::config{.long_id = "ht", .description = "do not use hashtable on last level"});
 }
 
 int check_arguments(sharg::parser &parser, cmd_arguments &args) {
@@ -120,9 +122,9 @@ int main(int argc, char** argv)
         std::cout << "building dict...\n";
         RSHash index;
         if(args.shape == std::numeric_limits<uint32_t>::max())
-            index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc);
+            index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
         else
-            index = RSHash(args.shape, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc);
+            index = RSHash(args.shape, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
         std::cout << "building dict...\n";
         index.build(text);
         index.save(args.d);
@@ -300,9 +302,8 @@ int main(int argc, char** argv)
             std::cout << "==== locate:\n";
             std::cout << "num_kmers = " << kmers.size() << '\n';
             std::cout << "num_positive_positions = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
-            // std::cout << "locate_time_per_kmer = " << ns_per_kmer << '\n';
-            std::cout << "locate_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
-            std::cout << "locate_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
+            std::cout << "pos_locate_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
+            std::cout << "pos_locate_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
 
 
             std::cout << "bench neg locate...\n";
@@ -328,9 +329,8 @@ int main(int argc, char** argv)
             std::cout << "==== locate:\n";
             std::cout << "num_kmers = " << kmers.size() << '\n';
             std::cout << "num_negative_positions = " << found << " (" << (double) found/kmers.size()*100 << "%)\n";
-            // std::cout << "locate_time_per_kmer = " << ns_per_kmer << '\n';
-            std::cout << "locate_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
-            std::cout << "locate_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
+            std::cout << "neg_locate_time_per_kmer = " << std::accumulate(times.begin(), times.end(), 0.0) / times.size() << '\n';
+            std::cout << "neg_locate_time_per_kmer_variance = " << std::sqrt(std::accumulate(times.begin(), times.end(), 0.0, [&](double acc, double x) { return acc + (x - (lookup_time_sum/round)) * (x - (lookup_time_sum/round)); }) / times.size()) << '\n';
 
         }
     }

@@ -4,35 +4,108 @@
 #include "rshash.hpp"
 
 
-uint64_t RSHash::locate(const std::vector<uint64_t> &kmers)
+void RSHash::initialise_locatefn()
 {
     bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
-    if(level == 1)
-        if(use_shape)
-            return locate1<true>(kmers);
-        else
-            return locate1<false>(kmers);
-    else if(level == 2)
-        if(use_shape)
-            return locate2<true>(kmers);
-        else
-            return locate2<false>(kmers);
-    else if(level == 3)
-        if(use_shape)
-            return locate3<true>(kmers);
-        else
-            return locate3<false>(kmers);
-    else
-        return 0;
+    switch (level) {
+    case 1:
+        if (use_shape) {
+            streaming_locate_fn = loc ? &RSHash::streaming_locate1<true, true> : &RSHash::streaming_locate1<true, false>;
+            locate_fn = loc ? &RSHash::locate1<true, true> : &RSHash::locate1<true, false>;
+        }
+        else {
+            streaming_locate_fn = loc ? &RSHash::streaming_locate1<false, true> : &RSHash::streaming_locate1<false, false>;
+            locate_fn = loc ? &RSHash::locate1<false, true> : &RSHash::locate1<false, false>;
+        }
+        break;
+
+    case 2:
+        if (use_shape) {
+            streaming_locate_fn = loc ? &RSHash::streaming_locate2<true, true> : &RSHash::streaming_locate2<true, false>;
+            locate_fn = loc ? &RSHash::locate2<true, true> : &RSHash::locate2<true, false>;
+        }
+        else {
+            streaming_locate_fn = loc ? &RSHash::streaming_locate2<false, true> : &RSHash::streaming_locate2<false, false>;
+            locate_fn = loc ? &RSHash::locate2<false, true> : &RSHash::locate2<false, false>;
+        }
+        break;
+
+    case 3:
+        if (use_shape) {
+            streaming_locate_fn = loc ? &RSHash::streaming_locate3<true, true> : &RSHash::streaming_locate3<true, false>;
+            locate_fn = loc ? &RSHash::locate3<true, true> : &RSHash::locate3<true, false>;
+        }
+        else {
+            streaming_locate_fn = loc ? &RSHash::streaming_locate3<false, true> : &RSHash::streaming_locate3<false, false>;
+            locate_fn = loc ? &RSHash::locate3<false, true> : &RSHash::locate3<false, false>;
+        }
+        break;
+
+    default:
+        streaming_locate_fn = nullptr;
+        locate_fn = nullptr;
+    }
+}
+
+uint64_t RSHash::streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
+    std::vector<std::pair<uint64_t, bool>> &positions, size_t &found_positions) {
+    return (this->*streaming_locate_fn)(query, positions, found_positions);
+}
+
+uint64_t RSHash::locate(const std::vector<uint64_t> &kmers) {
+    return (this->*locate_fn)(kmers);
 }
 
 
-template<bool use_shape>
+template<bool use_shape, bool use_ht>
+inline bool RSHash::locate_last_level(const uint64_t kmer, const uint64_t kmer_rc, uint64_t &positions)
+{
+    bool found = false;
+
+    if constexpr (use_ht) {
+        auto locate = [&](auto &map, uint64_t key) {
+            if (auto it = map.find(kmer); !it.empty()) {
+                for (uint32_t v : it)
+                    positions++;
+                found = true;
+            }
+        };
+
+        if constexpr (use_shape) {
+            locate(hashmap, kmer);
+            if (kmer != kmer_rc)
+                locate(hashmap_rc, kmer_rc);
+        } else {
+            locate(hashmap, std::min<uint64_t>(kmer, kmer_rc));
+        }
+    } else {
+        auto locate = [&](auto &ef, auto &sel, uint64_t key) {
+            uint64_t rank;
+            if (ef.contains(key, rank)) {
+                positions += sel.select(rank + 1) - sel.select(rank);
+                found = true;
+            }
+        };
+
+        if constexpr (use_shape) {
+            locate(r4, s4_select, kmer);
+            if (kmer != kmer_rc)
+                locate(r5, s5_select, kmer_rc);
+        } else {
+            locate(r4, s4_select, std::min<uint64_t>(kmer, kmer_rc));
+        }
+    }
+
+    return found;
+}
+
+
+template<bool use_shape, bool use_ht>
 uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers)
 {
     uint64_t positions = 0;
     uint64_t* offsets = new uint64_t[m_thres1];
-    uint64_t minimiser, minimiser_rank;
+    uint64_t minimiser, minimiser_rank, kmer_rank;;
     uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
 
@@ -57,10 +130,7 @@ uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers)
             positions += check_pos<1, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
         }
         else {
-            if constexpr (use_shape)
-                positions += hashmap[kmer].size() + hashmap_rc[kmer_rc].size();
-            else
-                positions += hashmap[std::min<uint64_t>(kmer, kmer_rc)].size();
+            locate_last_level<use_shape, use_ht>(kmer, kmer_rc, positions);
         }
     }
 
@@ -69,12 +139,12 @@ uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers)
     return positions;
 }
 
-template<bool use_shape>
+template<bool use_shape, bool use_ht>
 uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers)
 {
     uint64_t positions = 0;
     uint64_t* offsets = new uint64_t[m_thres2];
-    uint64_t minimiser, minimiser_rank;
+    uint64_t minimiser, minimiser_rank, kmer_rank;
     uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
 
@@ -106,10 +176,7 @@ uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers)
                 positions += check_pos<2, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
             }
             else {
-                if constexpr (use_shape)
-                    positions += hashmap[kmer].size() + hashmap_rc[kmer_rc].size();
-                else
-                    positions += hashmap[std::min<uint64_t>(kmer, kmer_rc)].size();
+                locate_last_level<use_shape, use_ht>(kmer, kmer_rc, positions);
             }
         }
     }
@@ -119,12 +186,12 @@ uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers)
     return positions;
 }
 
-template<bool use_shape>
+template<bool use_shape, bool use_ht>
 uint64_t RSHash::locate3(const std::vector<uint64_t> &kmers)
 {
     uint64_t positions = 0;
     uint64_t* offsets = new uint64_t[m_thres3];
-    uint64_t minimiser, minimiser_rank;
+    uint64_t minimiser, minimiser_rank, kmer_rank;
     uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
 
@@ -164,10 +231,7 @@ uint64_t RSHash::locate3(const std::vector<uint64_t> &kmers)
                     positions += check_pos<3, use_shape>(kmer, kmer_rc, offsets, p, no_minimiser, left_minimiser_position, right_minimiser_position);
                 }
                 else {
-                    if constexpr (use_shape)
-                        positions += hashmap[kmer].size() + hashmap_rc[kmer_rc].size();
-                    else
-                        positions += hashmap[std::min<uint64_t>(kmer, kmer_rc)].size();
+                    locate_last_level<use_shape, use_ht>(kmer, kmer_rc, positions);
                 }
             }
         }
@@ -238,7 +302,6 @@ inline uint64_t RSHash::check_pos(const uint64_t kmer, const uint64_t kmer_rc,
 
     return positions;
 }
-
 
 
 
@@ -401,35 +464,9 @@ inline void RSHash::locate_buffer(uint64_t *buffer, uint64_t *offsets, uint64_t 
 
 
 
-size_t RSHash::streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
-    std::vector<std::pair<uint64_t, bool>> &positions, size_t &found_positions)
-{
-    bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
-    if(level == 1) {
-        if(use_shape)
-            return streaming_locate1<true>(query, positions, found_positions);
-        else
-            return streaming_locate1<false>(query, positions, found_positions);
-    }
-    else if(level == 2) {
-        if(use_shape)
-            return streaming_locate2<true>(query, positions, found_positions);
-        else
-            return streaming_locate2<false>(query, positions, found_positions);
-    }
-    else if(level == 3) {
-        if(use_shape)
-            return streaming_locate3<true>(query, positions, found_positions);
-        else
-            return streaming_locate3<false>(query, positions, found_positions);
-    }
-    else
-        return 0;
-}
-
-template<bool use_shape>
-size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
-    std::vector<std::pair<uint64_t, bool>> &positions, size_t &found_positions)
+template<bool use_shape, bool use_ht>
+uint64_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
+    std::vector<std::pair<uint64_t, bool>> &positions, uint64_t &found_positions)
 {
     size_t found_kmers = 0;
     uint64_t current_pos_minimiser=std::numeric_limits<uint64_t>::max();
@@ -439,6 +476,7 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
     uint64_t* kmer_buffer = new uint64_t[m_thres1 * (span1 + overlap)];
     size_t no_minimiser;
     uint64_t minimiser, minimiser_rank;
+    uint64_t kmer_rank;
     size_t left_minimiser_position, right_minimiser_position;
     bool begin = true;
     uint64_t kernel, kernel_rev, kmer, kmer_rc;
@@ -476,27 +514,7 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
             current_pos_minimiser = minimiser;
         }
         else {
-            if constexpr (use_shape) {
-                if (auto it = hashmap.find(kmer); !it.empty()) {
-                    for (uint32_t v : it)
-                        found_positions++;
-                    found_kmers++;
-                }
-                else if (auto it = hashmap_rc.find(kmer_rc); !it.empty()) {
-                    for (uint32_t v : it)
-                        found_positions++;
-                    found_kmers++;
-                }
-            }
-            else {
-                const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
-                if (auto it = hashmap.find(canonical_kmer); !it.empty()) {
-                    for (uint32_t v : it)
-                        found_positions++;
-                    found_kmers++;
-                }
-            }
-            
+            found_kmers += locate_last_level<use_shape, use_ht>(kmer, kmer_rc, found_positions);
             current_neg_minimiser = minimiser;
         }
 
@@ -509,9 +527,9 @@ size_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4> 
     return found_kmers;
 }
 
-template<bool use_shape>
-size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
-    std::vector<std::pair<uint64_t, bool>> &positions, size_t &found_positions)
+template<bool use_shape, bool use_ht>
+uint64_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
+    std::vector<std::pair<uint64_t, bool>> &positions, uint64_t &found_positions)
 {
     size_t found_kmers = 0;
     uint64_t current_pos_minimiser1=std::numeric_limits<uint64_t>::max();
@@ -527,6 +545,7 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
     size_t no_minimiser1, no_minimiser2;
     uint64_t minimiser1, minimiser_rank1;
     uint64_t minimiser2, minimiser_rank2;
+    uint64_t kmer_rank;
     size_t left_minimiser_position1, right_minimiser_position1;
     size_t left_minimiser_position2, right_minimiser_position2;
     bool rolling1 = false;
@@ -589,26 +608,7 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
                     current_neg_minimiser1 = minimiser1;
                 }
                 else {
-                    if constexpr (use_shape) {
-                        if (auto it = hashmap.find(kmer); !it.empty()) {
-                            for (uint32_t v : it)
-                                found_positions++;
-                            found_kmers++;
-                        }
-                        else if (auto it = hashmap_rc.find(kmer_rc); !it.empty()) {
-                            for (uint32_t v : it)
-                                found_positions++;
-                            found_kmers++;
-                        }
-                    }
-                    else {
-                        const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
-                        if (auto it = hashmap.find(canonical_kmer); !it.empty()) {
-                            for (uint32_t v : it)
-                                found_positions++;
-                            found_kmers++;
-                        }
-                    }
+                    found_kmers += locate_last_level<use_shape, use_ht>(kmer, kmer_rc, found_positions);
                     current_neg_minimiser1 = minimiser1;
                     current_neg_minimiser2 = minimiser2;
                 }
@@ -625,9 +625,9 @@ size_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4> 
     return found_kmers;
 }
 
-template<bool use_shape>
-size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
-    std::vector<std::pair<uint64_t, bool>> &positions, size_t &found_positions)
+template<bool use_shape, bool use_ht>
+uint64_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> &query,
+    std::vector<std::pair<uint64_t, bool>> &positions, uint64_t &found_positions)
 {
     size_t found_kmers = 0;
     uint64_t current_pos_minimiser1=std::numeric_limits<uint64_t>::max();
@@ -649,6 +649,7 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
     uint64_t minimiser1, minimiser_rank1;
     uint64_t minimiser2, minimiser_rank2;
     uint64_t minimiser3, minimiser_rank3;
+    uint64_t kmer_rank;
     size_t left_minimiser_position1, right_minimiser_position1;
     size_t left_minimiser_position2, right_minimiser_position2;
     size_t left_minimiser_position3, right_minimiser_position3;
@@ -738,26 +739,7 @@ size_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4> 
                         current_neg_minimiser2 = minimiser2;
                     }
                     else {
-                        if constexpr (use_shape) {
-                            if (auto it = hashmap.find(kmer); !it.empty()) {
-                                for (uint32_t v : it)
-                                    found_positions++;
-                                found_kmers++;
-                            }
-                            else if (auto it = hashmap_rc.find(kmer_rc); !it.empty()) {
-                                for (uint32_t v : it)
-                                    found_positions++;
-                                found_kmers++;
-                            }
-                        }
-                        else {
-                            const uint64_t canonical_kmer = std::min<uint64_t>(kmer, kmer_rc);   
-                            if (auto it = hashmap.find(canonical_kmer); !it.empty()) {
-                                for (uint32_t v : it)
-                                    found_positions++;
-                                found_kmers++;
-                            }
-                        }
+                        found_kmers += locate_last_level<use_shape, use_ht>(kmer, kmer_rc, found_positions);
                         current_neg_minimiser1 = minimiser1;
                         current_neg_minimiser2 = minimiser2;
                         current_neg_minimiser3 = minimiser3;
