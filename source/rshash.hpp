@@ -6,7 +6,7 @@
 #include "compact_vector.hpp"
 #include "EliasFano.hpp"
 #include "minimiser_views.hpp"
-#include "shape_views.hpp"
+#include "shape.hpp"
 #include "util.hpp"
 #include "flat_map.hpp"
 
@@ -85,7 +85,7 @@ private:
     using LookupFn = uint64_t (RSHash::*)(const std::vector<uint64_t> &);
     StreamingLookupFn streaming_lookup_fn = nullptr;
     LookupFn lookup_fn = nullptr;
-    using StreamingLocateFn = uint64_t (RSHash::*)(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
+    using StreamingLocateFn = uint64_t (RSHash::*)(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t> &, size_t &);
     using LocateFn = uint64_t (RSHash::*)(const std::vector<uint64_t> &);
     StreamingLocateFn streaming_locate_fn = nullptr;
     LocateFn locate_fn = nullptr;
@@ -126,7 +126,7 @@ private:
     template<bool use_shape, bool use_ht, bool locate>
     inline bool lookup_last_level(const uint64_t, const uint64_t);
     template<bool use_shape, bool use_ht>
-    inline bool locate_last_level(const uint64_t, const uint64_t, uint64_t&);
+    inline bool locate_last_level(const uint64_t, const uint64_t, std::vector<uint64_t>&, uint64_t&);
     template<bool use_shape>
     inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t, uint64_t&, uint64_t&);
     const inline uint64_t get_word64(uint64_t pos);
@@ -139,11 +139,11 @@ private:
     template<bool use_shape, bool use_ht, bool locate>
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     template<bool use_shape, bool use_ht>
-    uint64_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, uint64_t &);
+    uint64_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t &);
     template<bool use_shape, bool use_ht>
-    uint64_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, uint64_t &);
+    uint64_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t &);
     template<bool use_shape, bool use_ht>
-    uint64_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, uint64_t &);
+    uint64_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t &);
     template<bool use_shape, bool use_ht, bool locate>
     uint64_t lookup1(const std::vector<uint64_t>&);
     template<bool use_shape, bool use_ht, bool locate>
@@ -157,13 +157,15 @@ private:
     template<bool use_shape, bool use_ht>
     uint64_t locate3(const std::vector<uint64_t>&);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<uint64_t> &);
     template<int level, bool use_shape>
-    inline bool report_minimiser_pos2(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<std::pair<uint64_t, bool>> &);
+    inline bool report_minimiser_pos2(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<uint64_t> &);
     template<int level, bool use_shape>
-    inline void locate_buffer(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<std::pair<uint64_t, bool>> &, size_t &, size_t &);
+    inline void locate_buffer(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<uint64_t> &, uint64_t&, uint64_t&);
     template <bool use_shape, bool use_ht, bool locate>
     void initialise_lookupfn_impl();
+    template <bool use_shape, bool use_ht>
+    void initialise_locatefn_impl();
 
 public:
     RSHash() : endpoints(std::vector<uint64_t>{}, 1),
@@ -213,7 +215,6 @@ public:
     uint8_t getk() { return k; }
     uint32_t getshape() { return shape.value; }
     bool has_locate() { return loc; }
-    uint8_t getmaxmthres() { return std::max({m_thres1, m_thres2, m_thres3}); }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
     const inline uint64_t access(const size_t);
@@ -223,7 +224,7 @@ public:
     uint64_t locate(const std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    uint64_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<std::pair<uint64_t, bool>> &, size_t &);
+    uint64_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t&);
     int save(const std::filesystem::path&);
     int load(const std::filesystem::path&);
     void print_info() {

@@ -61,7 +61,6 @@ void RSHash::initialise_lookupfn()
 }
 
 
-
 uint64_t RSHash::streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4> &query, uint64_t &extensions) {
     return (this->*streaming_lookup_fn)(query, extensions);
 }
@@ -69,6 +68,7 @@ uint64_t RSHash::streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>
 uint64_t RSHash::lookup(const std::vector<uint64_t> &kmers) {
     return (this->*lookup_fn)(kmers);
 }
+
 
 template <bool use_shape, typename Forward, typename Reverse>
 inline bool contains_impl(Forward &forward, Reverse &reverse,

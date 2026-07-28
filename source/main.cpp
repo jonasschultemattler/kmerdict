@@ -53,7 +53,7 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
     parser.add_option(args.t1, sharg::config{.long_id = "t1", .description = "threshold1"});
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
-    parser.add_option(args.t, sharg::config{.short_id = 't', .description = "threshold"});
+    parser.add_option(args.t, sharg::config{.short_id = 't', .description = "max k-mer/shape frequency threshold"});
     parser.add_option(args.shape, sharg::config{.long_id = "shape", .description = "shape value"});
     parser.add_flag(args.loc, sharg::config{.long_id = "loc", .description = "enable locate"});
     parser.add_flag(args.ht, sharg::config{.long_id = "ht", .description = "do not use hashtable on last level"});
@@ -163,7 +163,7 @@ int main(int argc, char** argv)
     {
         std::cout << "loading queries...\n";
         std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> queries;
-        size_t max_query_length = load_file(args.q, queries);
+        const size_t max_query_length = load_file(args.q, queries);
 
         std::chrono::nanoseconds elapsed;
         size_t kmers = 0;
@@ -178,35 +178,33 @@ int main(int argc, char** argv)
         }
 
         std::cout << "locating...\n";
-        // std::vector<std::pair<uint64_t, bool>> all_positions(queries.size() * max_query_length * index.getmaxmthres());
-        // std::vector<std::pair<uint64_t, bool>> all_positions;
-        size_t all_found_positions = 0;
-        size_t found_kmers = 0;
-        std::vector<std::pair<uint64_t, bool>> positions(max_query_length * index.getmaxmthres());
+        // std::vector<uint64_t> all_positions;
+        // all_positions.resize(queries.size() * max_query_length * avg_kmer_freq);
+        uint64_t found_positions = 0;
+        uint64_t found_kmers = 0;
+        const size_t avg_kmer_freq = 1000;
+        std::vector<uint64_t> positions;
+        positions.resize(max_query_length*avg_kmer_freq*2);
 
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
         for (auto query : queries) {
-            found_kmers += index.streaming_locate(query, positions, all_found_positions);
+            found_kmers += index.streaming_locate(query, positions, found_positions);
             // all_positions.insert(all_positions.end(), positions.begin(), positions.begin() + found_positions);
             if(index.getshape() != std::numeric_limits<uint32_t>::max())
                 kmers += query.size() - bit_length(index.getshape()) + 1;
             else
                 kmers += query.size() - index.getk() + 1;
+            positions.clear();
         }
         std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
-
-        // for(size_t i = 0; i < all_found_positions; i++) {
-        //     auto pos = all_positions[i];
-        //     std::cout << "(" << pos.first << "," << pos.second << ")";
-        // }
         
         double ns_per_kmer = (double) elapsed.count() / kmers;
         
         std::cout << "==== query report:\n";
         std::cout << "num_kmers = " << kmers << '\n';
         std::cout << "num_positive_kmers = " << found_kmers << "\n";
-        std::cout << "num_positions = " << all_found_positions << '\n';
+        std::cout << "num_positions = " << found_positions << '\n';
         std::cout << "time_per_kmer = " << ns_per_kmer << '\n';
     }
     else if(args.cmd == "bench")
