@@ -52,8 +52,8 @@ uint64_t RSHash::streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>
     return (this->*streaming_locate_fn)(query, positions, no_positions);
 }
 
-uint64_t RSHash::locate(const std::vector<uint64_t> &kmers) {
-    return (this->*locate_fn)(kmers);
+uint64_t RSHash::locate(const std::vector<uint64_t> &kmers, std::vector<uint64_t> &positions) {
+    return (this->*locate_fn)(kmers, positions);
 }
 
 
@@ -65,15 +65,17 @@ inline bool RSHash::locate_last_level(const uint64_t kmer, const uint64_t kmer_r
 
     if constexpr (use_ht) {
         auto locate = [&](auto &map, uint64_t key) {
-            if (auto it = map.find(key); !it.empty()) {
-                for (uint32_t v : it)
+            if(auto it = map.find(key); !it.empty()) {
+                for(uint32_t v : it)
                     no_positions++;
+                    // positions.push_back(v);
+                // std::memcpy(positions + pos, span.data(), span.size_bytes());
                 found = true;
             }
         };
         if constexpr (use_shape) {
             locate(hashmap, kmer);
-            if (kmer != kmer_rc)
+            if(kmer != kmer_rc)
                 locate(hashmap_rc, kmer_rc);
         }
         else
@@ -82,14 +84,16 @@ inline bool RSHash::locate_last_level(const uint64_t kmer, const uint64_t kmer_r
     else {
         auto locate = [&](auto &ef, auto &sel, uint64_t key) {
             uint64_t rank;
-            if (ef.contains(key, rank)) {
-                no_positions += sel.select(rank + 1) - sel.select(rank);
+            if(ef.contains(key, rank)) {
+                const size_t pos = sel.select(rank);
+                const size_t occs = sel.select(rank + 1) - pos;
+                no_positions += occs;
                 found = true;
             }
         };
         if constexpr (use_shape) {
             locate(r4, s4_select, kmer);
-            if (kmer != kmer_rc)
+            if(kmer != kmer_rc)
                 locate(r5, s5_select, kmer_rc);
         }
         else
@@ -101,9 +105,8 @@ inline bool RSHash::locate_last_level(const uint64_t kmer, const uint64_t kmer_r
 
 
 template<bool use_shape, bool use_ht>
-uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers)
+uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers, std::vector<uint64_t> &positions)
 {
-    std::vector<uint64_t> positions;
     uint64_t no_positions;
     uint64_t* offsets = new uint64_t[m_thres1];
     uint64_t minimiser, minimiser_rank, kmer_rank;;
@@ -141,9 +144,8 @@ uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers)
 }
 
 template<bool use_shape, bool use_ht>
-uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers)
+uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers, std::vector<uint64_t> &positions)
 {
-    std::vector<uint64_t> positions;
     uint64_t no_positions;
     uint64_t* offsets = new uint64_t[m_thres2];
     uint64_t minimiser, minimiser_rank, kmer_rank;
@@ -189,9 +191,8 @@ uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers)
 }
 
 template<bool use_shape, bool use_ht>
-uint64_t RSHash::locate3(const std::vector<uint64_t> &kmers)
+uint64_t RSHash::locate3(const std::vector<uint64_t> &kmers, std::vector<uint64_t> &positions)
 {
-    std::vector<uint64_t> positions;
     uint64_t no_positions;
     uint64_t* offsets = new uint64_t[m_thres3];
     uint64_t minimiser, minimiser_rank, kmer_rank;
@@ -307,10 +308,9 @@ inline uint64_t RSHash::check_pos(const uint64_t kmer, const uint64_t kmer_rc,
 }
 
 
-
 template<int level, bool use_shape>
 inline bool RSHash::report_minimiser_pos(uint64_t *buffer, uint64_t offset,
-    const uint64_t query, const uint64_t queryrc, uint64_t &i, const size_t s,
+    const uint64_t query, const uint64_t queryrc, uint64_t &no_positions, const size_t s,
     const size_t minimiser_pos, const uint64_t start_pos, const uint64_t end_pos,
     std::vector<uint64_t> &positions)
 {
@@ -339,16 +339,14 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, uint64_t offset,
 
     if(candidate == query && offset + pos >= start_pos && offset + pos + window_size - 1 < end_pos) {
         // forward = true;
-        // text_pos = offset + pos + window_size - 1;
         // positions.push_back(offset + pos + window_size - 1);
-        i++;
+        no_positions++;
         return true;
     }
     if(candidate_rc == queryrc && offset + pos_rc >= start_pos && offset + pos_rc + window_size - 1 < end_pos) {
         // forward = false;
-        // text_pos = offset + pos_rc;
         // positions.push_back(offset + pos_rc);
-        i++;
+        no_positions++;
         return true;
     }
 
@@ -358,7 +356,7 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, uint64_t offset,
 
 template<int level, bool use_shape>
 inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, uint64_t offset,
-    const uint64_t query, const uint64_t queryrc, uint64_t &i, const size_t s,
+    const uint64_t query, const uint64_t queryrc, uint64_t &no_positions, const size_t s,
     const size_t left_minimiser_pos, const size_t right_minimiser_pos,
     const uint64_t start_pos, const uint64_t end_pos, std::vector<uint64_t> &positions)
 {
@@ -396,30 +394,26 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, uint64_t offset,
 
     if(left_candidate == query && offset + left_pos >= start_pos && offset + left_pos + window_size - 1 < end_pos) {
         // forward = true;
-        // text_pos = offset + left_pos + window_size - 1;
         // positions.push_back(offset + left_pos + window_size - 1);
-        i++;
+        no_positions++;
         return true;
     }
     if(left_candidate_rc == queryrc && offset + left_pos_rc >= start_pos && offset + left_pos_rc + window_size - 1 < end_pos) {
         // forward = false;
-        // text_pos = offset + left_pos_rc;
         // positions.push_back(offset + left_pos_rc);
-        i++;
+        no_positions++;
         return true;
     }
     if(right_candidate == query && offset + right_pos >= start_pos && offset + right_pos + window_size - 1 < end_pos) {
         // forward = true;
-        // text_pos = offset + right_pos + window_size - 1;
         // positions.push_back(offset + right_pos + window_size - 1);
-        i++;
+        no_positions++;
         return true;
     }
     if(right_candidate_rc == queryrc && offset + right_pos_rc >= start_pos && offset + right_pos_rc + window_size - 1 < end_pos) {
         // forward = false;
-        // text_pos = offset + right_pos_rc;
         // positions.push_back(offset + right_pos_rc);
-        i++;
+        no_positions++;
         return true;
     }
 

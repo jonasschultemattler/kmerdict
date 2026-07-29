@@ -86,7 +86,7 @@ private:
     StreamingLookupFn streaming_lookup_fn = nullptr;
     LookupFn lookup_fn = nullptr;
     using StreamingLocateFn = uint64_t (RSHash::*)(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t> &, size_t &);
-    using LocateFn = uint64_t (RSHash::*)(const std::vector<uint64_t> &);
+    using LocateFn = uint64_t (RSHash::*)(const std::vector<uint64_t> &, std::vector<uint64_t>&);
     StreamingLocateFn streaming_locate_fn = nullptr;
     LocateFn locate_fn = nullptr;
     template<int level, typename MinimizerT>
@@ -151,11 +151,11 @@ private:
     template<bool use_shape, bool use_ht, bool locate>
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<bool use_shape, bool use_ht>
-    uint64_t locate1(const std::vector<uint64_t>&);
+    uint64_t locate1(const std::vector<uint64_t>&, std::vector<uint64_t>&);
     template<bool use_shape, bool use_ht>
-    uint64_t locate2(const std::vector<uint64_t>&);
+    uint64_t locate2(const std::vector<uint64_t>&, std::vector<uint64_t>&);
     template<bool use_shape, bool use_ht>
-    uint64_t locate3(const std::vector<uint64_t>&);
+    uint64_t locate3(const std::vector<uint64_t>&, std::vector<uint64_t>&);
     template<int level, bool use_shape>
     inline bool report_minimiser_pos(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<uint64_t> &);
     template<int level, bool use_shape>
@@ -221,7 +221,7 @@ public:
     void initialise_lookupfn();
     void initialise_locatefn();
     uint64_t lookup(const std::vector<uint64_t>&);
-    uint64_t locate(const std::vector<uint64_t>&);
+    uint64_t locate(const std::vector<uint64_t>&, std::vector<uint64_t>&);
     void build(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&);
     uint64_t streaming_lookup(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     uint64_t streaming_locate(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t&);
