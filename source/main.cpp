@@ -178,23 +178,20 @@ int main(int argc, char** argv)
         }
 
         std::cout << "locating...\n";
-        // std::vector<uint64_t> all_positions;
-        // all_positions.resize(queries.size() * max_query_length * avg_kmer_freq);
         uint64_t found_positions = 0;
         uint64_t found_kmers = 0;
-        const size_t avg_kmer_freq = 1000;
+        // const size_t max_kmer_freq = 1000000;
         std::vector<uint64_t> positions;
-        positions.resize(max_query_length*avg_kmer_freq*2);
-
+        // positions.reserve(max_query_length*max_kmer_freq);
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
         for (auto query : queries) {
             found_kmers += index.streaming_locate(query, positions, found_positions);
-            // all_positions.insert(all_positions.end(), positions.begin(), positions.begin() + found_positions);
+            found_positions += positions.size();
             if(index.getshape() != std::numeric_limits<uint32_t>::max())
                 kmers += query.size() - bit_length(index.getshape()) + 1;
             else
                 kmers += query.size() - index.getk() + 1;
-            positions.clear();
+            // positions.clear();
         }
         std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
@@ -282,11 +279,13 @@ int main(int argc, char** argv)
             error = 0.0;
             lookup_time_sum = 0.0;
             times.clear();
+            std::vector<uint64_t> positions;
+            // positions.reserve(100000);
 
             while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
                 kmers = index.rand_text_kmers(1000000);
                 t_start = std::chrono::high_resolution_clock::now();
-                found = index.locate(kmers);
+                found = index.locate(kmers, positions);
                 t_stop = std::chrono::high_resolution_clock::now();
                 elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
                 ns_per_kmer = (double) elapsed.count() / kmers.size();
@@ -313,7 +312,7 @@ int main(int argc, char** argv)
             while((round < 10 || error/round > 0.05 * (lookup_time_sum/round)) && round <= 50) {
                 kmers = rand_kmers(1000000, index.getk());
                 t_start = std::chrono::high_resolution_clock::now();
-                found = index.locate(kmers);
+                found = index.locate(kmers, positions);
                 t_stop = std::chrono::high_resolution_clock::now();
                 elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
                 ns_per_kmer = (double) elapsed.count() / kmers.size();
