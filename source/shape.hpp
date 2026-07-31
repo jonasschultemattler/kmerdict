@@ -87,23 +87,25 @@ typedef struct {
     size_t length;
     size_t kernel_start;
     size_t kernel_end;
+    size_t overlap_left;
+    size_t overlap_right;
 } Shape32;
 
-static inline Shape32 shape32_create(uint32_t value)
-{
-    Shape32 r;
 
-    r.value = value;
+static inline Shape32 shape32_create(uint32_t value) {
+    Shape32 shape;
 
-    if(value != std::numeric_limits<uint32_t>::max()) {
-        r.mask = compute_shape_mask(value);
-        r.mask_rev = compute_shape_mask(reverse_shape(value));
-        r.weight = __builtin_popcount(value);
-        r.length = bit_length(value);
-        run_t run = find_long_run(value);
-        r.kernel_start = run.start;
-        r.kernel_end = run.end;
-    }
+    shape.value = value;
+
+    shape.mask = compute_shape_mask(value);
+    shape.mask_rev = compute_shape_mask(reverse_shape(value));
+    shape.weight = __builtin_popcount(value);
+    shape.length = bit_length(value);
+    run_t run = find_long_run(value);
+    shape.kernel_start = run.start;
+    shape.kernel_end = run.end;
+    shape.overlap_left = shape.length - shape.kernel_end;
+    shape.overlap_right = shape.kernel_start;
 
     // std::cout << "shape: " << std::bitset<32>(value) << "\n";
     // std::cout << "shape mask: " << std::bitset<64>(r.mask) << "\n";
@@ -113,5 +115,32 @@ static inline Shape32 shape32_create(uint32_t value)
     // std::cout << "kernel start: " << r.kernel_start << "\n";
     // std::cout << "kernel end: " << r.kernel_end << "\n";
 
-    return r;
+    return shape;
+}
+
+static inline std::vector<Shape32> shape32_create(const std::vector<uint32_t> values)
+{
+    std::vector<Shape32> shapes;
+    for(uint32_t shape_val : values)
+        shapes.emplace_back(shape32_create(shape_val));
+
+    return shapes;
+}
+
+
+namespace cereal {
+
+template <class Archive>
+void serialize(Archive& ar, Shape32& shape) {
+    ar(shape.value,
+       shape.mask,
+       shape.mask_rev,
+       shape.weight,
+       shape.length,
+       shape.kernel_start,
+       shape.kernel_end,
+       shape.overlap_left,
+       shape.overlap_right);
+}
+
 }
