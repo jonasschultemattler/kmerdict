@@ -34,7 +34,7 @@ struct cmd_arguments {
     uint8_t t2{64};
     uint16_t t3{64};
     uint16_t t{0};
-    uint32_t shape{std::numeric_limits<uint32_t>::max()};
+    std::vector<uint32_t> shapes{std::numeric_limits<uint32_t>::max()};
     bool loc{false};
     bool ht{false};
 };
@@ -54,7 +54,7 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
     parser.add_option(args.t, sharg::config{.short_id = 't', .description = "max k-mer/shape frequency threshold"});
-    parser.add_option(args.shape, sharg::config{.long_id = "shape", .description = "shape value"});
+    parser.add_option(args.shapes, sharg::config{.long_id = "shapes", .description = "list of shape values"});
     parser.add_flag(args.loc, sharg::config{.long_id = "loc", .description = "enable locate"});
     parser.add_flag(args.ht, sharg::config{.long_id = "ht", .description = "do not use hashtable on last level"});
 }
@@ -121,11 +121,10 @@ int main(int argc, char** argv)
 
         std::cout << "building dict...\n";
         RSHash index;
-        if(args.shape == std::numeric_limits<uint32_t>::max())
+        if(args.shapes[0] == std::numeric_limits<uint32_t>::max())
             index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
         else
-            index = RSHash(args.shape, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
-        std::cout << "building dict...\n";
+            index = RSHash(args.shapes[0], args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
         index.build(text);
         index.save(args.d);
     }

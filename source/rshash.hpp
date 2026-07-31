@@ -65,12 +65,18 @@ class RSHash
 {
 private:
     Shape32 shape;
-    uint64_t k, shape_overlap_left, shape_overlap_right, overlap, window_size;
+    std::vector<Shape32> shapes;
+    uint64_t overlap;
+
+    uint64_t k, window_size;
     uint64_t level, m1, m_thres1, m2, m_thres2, m3, m_thres3, threshold;
+
     uint64_t span1, span2, span3;
     uint64_t windowmask, windowshift, mmermask1, mmermask2, mmermask3;
-    uint64_t shape_mask, shape_mask_rev, kernel_mask, kernel_mask_rev;
+    uint64_t kernel_mask, kernel_mask_rev;
+
     bool loc, use_ht;
+
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
     uint64_t no_text_kmers;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> r1, r2, r3, r4, r5;
@@ -102,7 +108,11 @@ private:
     void fill_minimizer_offsets(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, std::vector<size_t> &, std::vector<uint8_t> &, const size_t, const size_t);
     template<int level>
     size_t get_frequent_skmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<SkmerInfo> &);
-    void fill_ht(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
+    gtl::flat_hash_map<uint64_t, uint16_t> count_kmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
+    template <typename AddForward, typename AddReverse>
+    void process_freq_kmers(AddForward&& add, AddReverse&& add_rc, const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &, gtl::flat_hash_map<uint64_t, uint16_t> &);
+    template <size_t MarkId, typename EF, typename Offsets>
+    void build_level(gtl::flat_hash_map<uint64_t, std::vector<uint64_t>>&, EF&, Offsets&);
     void last_level(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
     template<int level>
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
@@ -179,7 +189,7 @@ public:
     RSHash(uint8_t const k, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
             uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, bool const ht)
         : 
-        shape(shape32_create(std::numeric_limits<uint32_t>::max())), k(k), overlap(0), shape_overlap_left(0), shape_overlap_right(0),
+        shape(shape32_create(std::numeric_limits<uint32_t>::max())), k(k), overlap(0), // shape_overlap_left(0), shape_overlap_right(0),
         level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc), use_ht(ht),
         span1(k-m1+1), span2(k-m2+1), span3(k-m3+1),
         window_size(k), windowmask(compute_mask(2u * k)), windowshift(2 * (k-1)),
@@ -196,14 +206,14 @@ public:
             uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, bool const ht)
         : shape(shape32_create(shape)),
         k(this->shape.kernel_end - this->shape.kernel_start),
-        shape_overlap_left(this->shape.length - this->shape.kernel_end), shape_overlap_right(this->shape.kernel_start),
-        overlap(std::max(this->shape_overlap_left, this->shape_overlap_right)),
-        level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc), use_ht(ht),
+        overlap(std::max(this->shape.overlap_left, this->shape.overlap_right)),
+        level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold),
+        loc(loc), use_ht(ht),
         span1(this->k-m1+1), span2(this->k-m2+1), span3(this->k-m3+1),
         window_size(this->shape.length), windowmask(compute_mask(2u * window_size)), windowshift(2 * (this->shape.length-1)),
         mmermask1(compute_mask(2u * m1)), mmermask2(compute_mask(2u * m2)), mmermask3(compute_mask(2u * m3)),
-        shape_mask(this->shape.mask), shape_mask_rev(this->shape.mask_rev),
-        kernel_mask(compute_mask(2u * (this->shape.kernel_end - this->shape.kernel_start)) << 2*shape_overlap_right), kernel_mask_rev(compute_mask(2u * (this->shape.kernel_end - this->shape.kernel_start)) << 2*shape_overlap_left),
+        kernel_mask(compute_mask(2u * k) << 2*this->shape.overlap_right),
+        kernel_mask_rev(compute_mask(2u * k) << 2*this->shape.overlap_left),
         endpoints(std::vector<uint64_t>{}, 1),
         r1(std::vector<uint64_t>{}, 1),
         r2(std::vector<uint64_t>{}, 1),
@@ -212,6 +222,25 @@ public:
         r5(std::vector<uint64_t>{}, 1),
         m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
     {}
+    // RSHash(const std::vector<uint32_t> shapes, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
+    //         uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, bool const ht)
+    //     : shapes(shape32_create(shapes)),
+    //     k(this->shape.kernel_end - this->shape.kernel_start),
+    //     shape_overlap_left(this->shape.length - this->shape.kernel_end), shape_overlap_right(this->shape.kernel_start),
+    //     overlap(std::max(this->shape_overlap_left, this->shape_overlap_right)),
+    //     level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc), use_ht(ht),
+    //     span1(this->k-m1+1), span2(this->k-m2+1), span3(this->k-m3+1),
+    //     window_size(this->shape.length), windowmask(compute_mask(2u * window_size)), windowshift(2 * (this->shape.length-1)),
+    //     mmermask1(compute_mask(2u * m1)), mmermask2(compute_mask(2u * m2)), mmermask3(compute_mask(2u * m3)),
+    //     kernel_mask(compute_mask(2u * (this->shape.kernel_end - this->shape.kernel_start)) << 2*shape_overlap_right), kernel_mask_rev(compute_mask(2u * (this->shape.kernel_end - this->shape.kernel_start)) << 2*shape_overlap_left),
+    //     endpoints(std::vector<uint64_t>{}, 1),
+    //     r1(std::vector<uint64_t>{}, 1),
+    //     r2(std::vector<uint64_t>{}, 1),
+    //     r3(std::vector<uint64_t>{}, 1),
+    //     r4(std::vector<uint64_t>{}, 1),
+    //     r5(std::vector<uint64_t>{}, 1),
+    //     m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
+    // {}
     uint8_t getk() { return k; }
     uint32_t getshape() { return shape.value; }
     bool has_locate() { return loc; }
