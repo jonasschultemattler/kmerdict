@@ -7,7 +7,6 @@
 #include "EliasFano.hpp"
 #include "minimiser_views.hpp"
 #include "shape.hpp"
-#include "util.hpp"
 #include "flat_map.hpp"
 
 using namespace seqan3::literals;
@@ -64,27 +63,24 @@ struct RadixTraitsMinimizer64 {
 class RSHash
 {
 private:
-    Shape32 shape;
-    std::vector<Shape32> shapes;
-    uint64_t overlap;
-
+    Shapes32 shapes;
+    int number_shapes;
+    size_t overlap;
     uint64_t k, window_size;
     uint64_t level, m1, m_thres1, m2, m_thres2, m3, m_thres3, threshold;
-
     uint64_t span1, span2, span3;
     uint64_t windowmask, windowshift, mmermask1, mmermask2, mmermask3;
-    uint64_t kernel_mask, kernel_mask_rev;
-
     bool loc, use_ht;
-
     mixer_64 m_hasher1, m_hasher2, m_hasher3;
     uint64_t no_text_kmers;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> r1, r2, r3, r4, r5;
     bit_vector s1, s2, s3, s4, s5;
     sux::bits::SimpleSelect<sux::util::AllocType::MALLOC> s1_select, s2_select, s3_select, s4_select, s5_select;
     bits::compact_vector offsets1, offsets2, offsets3, offsets4, offsets5;
-    gtl::flat_hash_set<uint64_t> hashset, hashset_rc;
-    FlatMap hashmap, hashmap_rc;
+    std::vector<gtl::flat_hash_set<uint64_t>> hashsets;
+    std::vector<gtl::flat_hash_set<uint64_t>> hashsets_rc;
+    std::vector<FlatMap> hashmaps;
+    std::vector<FlatMap> hashmaps_rc;
     sux::bits::EliasFano<sux::util::AllocType::MALLOC> endpoints;
     std::vector<uint64_t> text;
     using StreamingLookupFn = uint64_t (RSHash::*)(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
@@ -97,11 +93,9 @@ private:
     LocateFn locate_fn = nullptr;
     template<int level, typename MinimizerT>
     inline void filter_freq_minimizers(std::vector<MinimizerT> &minimizers,
-    std::vector<uint8_t> &counts, size_t &no_minimizers, size_t &no_skmers);
+    std::vector<uint16_t> &counts, size_t &no_minimizers, size_t &no_skmers);
     template<int level, typename MinimizerT>
-    inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<uint64_t> &, std::vector<uint8_t> &);
-    template<int level>
-    void mark_occurences(const size_t, const std::vector<uint8_t> &);
+    inline uint64_t get_minimizers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>> &, const std::vector<SkmerInfo> &, std::vector<uint64_t> &, std::vector<uint16_t> &);
     template<int level>
     void mark_occurences(const size_t, const std::vector<uint16_t> &);
     template<int level>
@@ -111,6 +105,8 @@ private:
     gtl::flat_hash_map<uint64_t, uint16_t> count_kmers(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
     template <typename AddForward, typename AddReverse>
     void process_freq_kmers(AddForward&& add, AddReverse&& add_rc, const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &, gtl::flat_hash_map<uint64_t, uint16_t> &);
+    template <typename AddForward, typename AddReverse>
+    void process_freq_kmers(AddForward&& add, AddReverse&& add_rc, const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &, gtl::flat_hash_map<uint64_t, uint16_t> &, Shape32&);
     template <size_t MarkId, typename EF, typename Offsets>
     void build_level(gtl::flat_hash_map<uint64_t, std::vector<uint64_t>>&, EF&, Offsets&);
     void last_level(const std::vector<seqan3::bitpacked_sequence<seqan3::dna4>>&, const std::vector<SkmerInfo> &);
@@ -118,35 +114,35 @@ private:
     inline uint64_t find_minimiser(const uint64_t, const uint64_t, size_t &, size_t &);
     template<int level>
     inline void update_minimiser(const uint64_t, const uint64_t, uint64_t&, size_t &, size_t &);
-    template<int level, bool use_shape>
+    template<int level, int no_shapes>
     inline bool check(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
     template<int level, bool use_shape>
     inline uint64_t check_pos(const uint64_t, const uint64_t, uint64_t*, const size_t, const size_t, const size_t, const size_t);
-    template<int level, bool use_shape>
+    template<int level>
     inline void fill_buffer(uint64_t *, uint64_t *, size_t, size_t);
-    template<int level, bool use_shape>
+    template<int level>
     inline void fill_buffer2(uint64_t *, uint64_t *, uint64_t *, size_t, size_t);
-    inline bool check_overlap(uint64_t, uint64_t &, uint64_t &);
-    template<int level, bool use_shape>
-    inline bool check_minimiser_pos(uint64_t *, uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
-    template<int level, bool use_shape>
-    inline bool check_minimiser_pos2(uint64_t *, uint64_t, const uint64_t, const uint64_t, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
-    template<int level, bool use_shape>
-    inline bool lookup_buffer(uint64_t *, uint64_t *, const size_t, const uint64_t, const uint64_t, uint64_t &, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
-    template<bool use_shape, bool use_ht, bool locate>
-    inline bool lookup_last_level(const uint64_t, const uint64_t);
+    inline bool check_overlap(uint64_t, uint64_t &, uint64_t &, uint64_t);
+    template<int level, int no_shapes>
+    inline bool check_minimiser_pos(uint64_t*, uint64_t, const uint64_t, const uint64_t, uint64_t*, uint64_t*, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    template<int level, int no_shapes>
+    inline bool check_minimiser_pos2(uint64_t*, uint64_t, const uint64_t, const uint64_t, uint64_t*, uint64_t*, const size_t, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    template<int level, int no_shapes>
+    inline bool lookup_buffer(uint64_t *, uint64_t *, const size_t, const uint64_t, const uint64_t, uint64_t*, uint64_t*, uint64_t &, const size_t, const size_t, bool &, uint64_t &, uint64_t &, uint64_t &, uint64_t &);
+    template<int no_shapes, bool use_ht, bool locate>
+    inline bool lookup_last_level(const uint64_t, const uint64_t, uint64_t*, uint64_t*);
     template<bool use_shape, bool use_ht>
     inline bool locate_last_level(const uint64_t, const uint64_t, std::vector<uint64_t>&, uint64_t&);
-    template<bool use_shape>
-    inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t, uint64_t&, uint64_t&);
+    template<int no_shapes>
+    inline bool extend_in_text(uint64_t&, uint64_t, uint64_t, bool, const uint64_t, const uint64_t, uint64_t*, uint64_t*, uint64_t&, uint64_t&);
     const inline uint64_t get_word64(uint64_t pos);
     const inline uint64_t get_base(uint64_t pos);
     const inline void get_2words64(uint64_t pos, uint64_t &lo, uint64_t &hi);
-    template<bool use_shape, bool use_ht, bool locate>
+    template<int no_shapes, bool use_ht, bool locate>
     uint64_t streaming_lookup1(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    template<bool use_shape, bool use_ht, bool locate>
+    template<int no_shapes, bool use_ht, bool locate>
     uint64_t streaming_lookup2(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
-    template<bool use_shape, bool use_ht, bool locate>
+    template<int no_shapes, bool use_ht, bool locate>
     uint64_t streaming_lookup3(const seqan3::bitpacked_sequence<seqan3::dna4>&, uint64_t&);
     template<bool use_shape, bool use_ht>
     uint64_t streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t &);
@@ -154,11 +150,11 @@ private:
     uint64_t streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t &);
     template<bool use_shape, bool use_ht>
     uint64_t streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4>&, std::vector<uint64_t>&, uint64_t &);
-    template<bool use_shape, bool use_ht, bool locate>
+    template<int no_shapes, bool use_ht, bool locate>
     uint64_t lookup1(const std::vector<uint64_t>&);
-    template<bool use_shape, bool use_ht, bool locate>
+    template<int no_shapes, bool use_ht, bool locate>
     uint64_t lookup2(const std::vector<uint64_t>&);
-    template<bool use_shape, bool use_ht, bool locate>
+    template<int no_shapes, bool use_ht, bool locate>
     uint64_t lookup3(const std::vector<uint64_t>&);
     template<bool use_shape, bool use_ht>
     uint64_t locate1(const std::vector<uint64_t>&, std::vector<uint64_t>&);
@@ -172,8 +168,10 @@ private:
     inline bool report_minimiser_pos2(uint64_t *, uint64_t, const uint64_t, const uint64_t, size_t &, const size_t, const size_t, const size_t, const uint64_t, const uint64_t, std::vector<uint64_t> &);
     template<int level, bool use_shape>
     inline void locate_buffer(uint64_t*, uint64_t*, uint64_t *, const size_t, const uint64_t, const uint64_t, const size_t, const size_t, std::vector<uint64_t> &, uint64_t&, uint64_t&);
-    template <bool use_shape, bool use_ht, bool locate>
+    template <int no_shapes, bool use_ht, bool locate>
     void initialise_lookupfn_impl();
+    template<int no_shapes>
+    void initialise_lookupfn_dispatch();
     template <bool use_shape, bool use_ht>
     void initialise_locatefn_impl();
 
@@ -189,8 +187,10 @@ public:
     RSHash(uint8_t const k, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
             uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, bool const ht)
         : 
-        shape(shape32_create(std::numeric_limits<uint32_t>::max())), k(k), overlap(0), // shape_overlap_left(0), shape_overlap_right(0),
-        level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc), use_ht(ht),
+        shapes(shape32_create(std::vector<uint32_t>{std::numeric_limits<uint32_t>::max()})),
+        number_shapes(0), k(k),
+        level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold),
+        loc(loc), use_ht(ht),
         span1(k-m1+1), span2(k-m2+1), span3(k-m3+1),
         window_size(k), windowmask(compute_mask(2u * k)), windowshift(2 * (k-1)),
         mmermask1(compute_mask(2u * m1)), mmermask2(compute_mask(2u * m2)), mmermask3(compute_mask(2u * m3)),
@@ -202,18 +202,16 @@ public:
         r5(std::vector<uint64_t>{}, 1),
         m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
     {}
-    RSHash(uint32_t const shape, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
+    RSHash(Shapes32 const &shapes, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
             uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, bool const ht)
-        : shape(shape32_create(shape)),
-        k(this->shape.kernel_end - this->shape.kernel_start),
-        overlap(std::max(this->shape.overlap_left, this->shape.overlap_right)),
+        :
+        shapes(shapes), number_shapes(shapes.shapes.size()),
+        k(this->shapes.kernel_length),
         level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold),
         loc(loc), use_ht(ht),
         span1(this->k-m1+1), span2(this->k-m2+1), span3(this->k-m3+1),
-        window_size(this->shape.length), windowmask(compute_mask(2u * window_size)), windowshift(2 * (this->shape.length-1)),
+        window_size(this->shapes.length), windowmask(compute_mask(2u * window_size)), windowshift(2 * (this->shapes.length-1)),
         mmermask1(compute_mask(2u * m1)), mmermask2(compute_mask(2u * m2)), mmermask3(compute_mask(2u * m3)),
-        kernel_mask(compute_mask(2u * k) << 2*this->shape.overlap_right),
-        kernel_mask_rev(compute_mask(2u * k) << 2*this->shape.overlap_left),
         endpoints(std::vector<uint64_t>{}, 1),
         r1(std::vector<uint64_t>{}, 1),
         r2(std::vector<uint64_t>{}, 1),
@@ -222,27 +220,8 @@ public:
         r5(std::vector<uint64_t>{}, 1),
         m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
     {}
-    // RSHash(const std::vector<uint32_t> shapes, uint8_t const level, uint8_t const m1, uint8_t const m2, uint8_t const m3,
-    //         uint8_t const m_thres1, uint8_t const m_thres2, uint8_t const m_thres3, uint16_t const threshold, bool const loc, bool const ht)
-    //     : shapes(shape32_create(shapes)),
-    //     k(this->shape.kernel_end - this->shape.kernel_start),
-    //     shape_overlap_left(this->shape.length - this->shape.kernel_end), shape_overlap_right(this->shape.kernel_start),
-    //     overlap(std::max(this->shape_overlap_left, this->shape_overlap_right)),
-    //     level(level), m1(m1), m2(m2), m3(m3), m_thres1(m_thres1), m_thres2(m_thres2), m_thres3(m_thres3), threshold(threshold), loc(loc), use_ht(ht),
-    //     span1(this->k-m1+1), span2(this->k-m2+1), span3(this->k-m3+1),
-    //     window_size(this->shape.length), windowmask(compute_mask(2u * window_size)), windowshift(2 * (this->shape.length-1)),
-    //     mmermask1(compute_mask(2u * m1)), mmermask2(compute_mask(2u * m2)), mmermask3(compute_mask(2u * m3)),
-    //     kernel_mask(compute_mask(2u * (this->shape.kernel_end - this->shape.kernel_start)) << 2*shape_overlap_right), kernel_mask_rev(compute_mask(2u * (this->shape.kernel_end - this->shape.kernel_start)) << 2*shape_overlap_left),
-    //     endpoints(std::vector<uint64_t>{}, 1),
-    //     r1(std::vector<uint64_t>{}, 1),
-    //     r2(std::vector<uint64_t>{}, 1),
-    //     r3(std::vector<uint64_t>{}, 1),
-    //     r4(std::vector<uint64_t>{}, 1),
-    //     r5(std::vector<uint64_t>{}, 1),
-    //     m_hasher1(seed1), m_hasher2(seed2), m_hasher3(seed3)
-    // {}
     uint8_t getk() { return k; }
-    uint32_t getshape() { return shape.value; }
+    Shapes32 getshapes() { return shapes; }
     bool has_locate() { return loc; }
     uint64_t number_unitigs() { return endpoints.rank(endpoints.size()); }
     size_t unitig_size(uint64_t unitig_id) { return endpoints.select(unitig_id+1) - endpoints.select(unitig_id) - k + 1; }
@@ -270,23 +249,26 @@ public:
         const uint64_t no_skmers3 = s3.size();
         const uint64_t no_kmers4 = s4.size();
         const uint64_t no_kmers5 = s5.size();
-        size_t freq_space, freq_kmers;
+        size_t freq_space = 0;
+        size_t freq_kmers = 0;
         if(loc) {
-            if(shape.value != std::numeric_limits<uint32_t>::max()) {
+            if(number_shapes > 0) {
                 if(use_ht) {
-                    freq_space = hashmap.memory_bits() + hashmap_rc.memory_bits();
-                    freq_kmers = hashmap.size() + hashmap_rc.size();
+                    for(int i = 0; i < hashmaps.size(); i++) {
+                        freq_space += hashmaps[i].memory_bits() + hashmaps_rc[i].memory_bits();
+                        freq_kmers += hashmaps[i].size() + hashmaps_rc[i].size();
+                    }
                 }
                 else {
                     freq_space = r4.bitCount() + no_kmers4*offset_width + no_kmers4 + s4_select.bitCount()
-                                + r5.bitCount() + no_kmers5*offset_width + no_kmers5 + s5_select.bitCount();
+                               + r5.bitCount() + no_kmers5*offset_width + no_kmers5 + s5_select.bitCount();
                     freq_kmers = r4.rank(1ULL << (2*window_size)) + r5.rank(1ULL << (2*window_size));
                 }
             }
             else {
                 if(use_ht) {
-                    freq_space = hashmap.memory_bits();
-                    freq_kmers = hashmap.size();
+                    freq_space = hashmaps[0].memory_bits();
+                    freq_kmers = hashmaps[0].size();
                 }
                 else {
                     freq_space = r4.bitCount() + no_kmers4*offset_width + no_kmers4 + s4_select.bitCount();
@@ -295,10 +277,12 @@ public:
             }
         }
         else {
-            if(shape.value != std::numeric_limits<uint32_t>::max()) {
+            if(number_shapes > 0) {
                 if(use_ht) {
-                    freq_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8 + hashset_rc.capacity()*(sizeof(uint64_t) + 1)*8;
-                    freq_kmers = hashset.size() + hashset_rc.size();
+                    for(int i = 0; i < hashsets.size(); i++) {
+                        freq_space += hashsets[i].capacity()*(sizeof(uint64_t) + 1)*8 + hashsets_rc[i].capacity()*(sizeof(uint64_t) + 1)*8;
+                        freq_kmers += hashsets[i].size() + hashsets_rc[i].size();
+                    }
                 }
                 else {
                     freq_space = r4.bitCount() + r5.bitCount();
@@ -307,8 +291,8 @@ public:
             }
             else {
                 if(use_ht) {
-                    freq_space = hashset.capacity()*(sizeof(uint64_t) + 1)*8;
-                    freq_kmers = hashset.size();
+                    freq_space += hashsets[0].capacity()*(sizeof(uint64_t) + 1)*8;
+                    freq_kmers += hashsets[0].size();
                 }
                 else {
                     freq_space = r4.bitCount();
@@ -360,8 +344,7 @@ public:
     
         std::cout << "total: " << (double) (no_skmers1*offset_width+no_skmers2*offset_width+no_skmers3*offset_width+2*N+r1.bitCount()+r2.bitCount()+r3.bitCount()+no_skmers1+1+s1_select.bitCount()+no_skmers2+1+s2_select.bitCount()+no_skmers3+1+s3_select.bitCount()+endpoints.bitCount()+freq_space)/no_text_kmers << "\n";
     }
-    std::vector<uint64_t> rand_text_kmers(const uint64_t n)
-    {
+    std::vector<uint64_t> rand_text_kmers(const uint64_t n) {
         std::uniform_int_distribution<uint32_t> distr;
         std::mt19937 m_rand(1);
         std::vector<std::uint64_t> kmers;
@@ -411,7 +394,7 @@ const inline uint64_t RSHash::access(const size_t offset) {
 }
 
 
-template<int level, bool use_shape>
+template<int level>
 inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, size_t N)
 {
     uint64_t span;
@@ -432,11 +415,8 @@ inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, s
     }
     
     for(uint64_t i = 0; i < N; i++) {
-        uint64_t s = offsets[i];
+        uint64_t s = offsets[i] - shapes.overlap;
         uint64_t e = s + span-1;
-
-        if constexpr (use_shape)
-            s -= overlap;
             
         uint64_t window = get_word64(s) & windowmask;
         uint64_t bits = get_word64(s + window_size); // assert span + overlap <= 32
@@ -452,7 +432,7 @@ inline void RSHash::fill_buffer(uint64_t *offsets, uint64_t *buffer, size_t p, s
 
 }
 
-template<int level, bool use_shape>
+template<int level>
 inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *endpositions, size_t p, size_t N)
 {
     uint64_t span;
@@ -479,11 +459,8 @@ inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *
     }
     
     for(uint64_t i = 0; i < N; i++) {
-        uint64_t s = offsets[i];
+        uint64_t s = offsets[i] - shapes.overlap;
         uint64_t e = s + span-1;
-
-        if constexpr (use_shape)
-            s -= overlap;
             
         uint64_t window = get_word64(s) & windowmask;
         uint64_t bits = get_word64(s + window_size); // assert span + overlap <= 32
@@ -499,10 +476,9 @@ inline void RSHash::fill_buffer2(uint64_t *offsets, uint64_t *buffer, uint64_t *
     }
 }
 
-inline bool RSHash::check_overlap(uint64_t text_pos, uint64_t &start_pos, uint64_t &end_pos) {
+inline bool RSHash::check_overlap(uint64_t text_pos, uint64_t &start_pos, uint64_t &end_pos, uint64_t length) {
     start_pos = endpoints.select(endpoints.rank(text_pos+1)-1, &end_pos);
-
-    return text_pos + window_size - 1 < end_pos;
+    return text_pos + length - 1 < end_pos;
 }
 
 

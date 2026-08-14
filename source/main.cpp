@@ -30,13 +30,13 @@ struct cmd_arguments {
     uint8_t m1{18};
     uint8_t m2{21};
     uint8_t m3{23};
-    uint8_t t1{64};
-    uint8_t t2{64};
+    uint16_t t1{64};
+    uint16_t t2{64};
     uint16_t t3{64};
     uint16_t t{0};
-    std::vector<uint32_t> shapes{std::numeric_limits<uint32_t>::max()};
     bool loc{false};
     bool ht{false};
+    std::vector<uint32_t> shapes{std::numeric_limits<uint32_t>::max()};
 };
 
 void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
@@ -54,9 +54,9 @@ void initialise_argument_parser(sharg::parser &parser, cmd_arguments &args)
     parser.add_option(args.t2, sharg::config{.long_id = "t2", .description = "threshold2"});
     parser.add_option(args.t3, sharg::config{.long_id = "t3", .description = "threshold3"});
     parser.add_option(args.t, sharg::config{.short_id = 't', .description = "max k-mer/shape frequency threshold"});
-    parser.add_option(args.shapes, sharg::config{.long_id = "shapes", .description = "list of shape values"});
     parser.add_flag(args.loc, sharg::config{.long_id = "loc", .description = "enable locate"});
     parser.add_flag(args.ht, sharg::config{.long_id = "ht", .description = "do not use hashtable on last level"});
+    parser.add_option(args.shapes, sharg::config{.long_id = "shapes", .description = "list of shape values"});
 }
 
 int check_arguments(sharg::parser &parser, cmd_arguments &args) {
@@ -65,8 +65,6 @@ int check_arguments(sharg::parser &parser, cmd_arguments &args) {
     if(args.cmd == "build") {
         if(!parser.is_option_set('i'))
             throw sharg::user_input_error("provide input file.");
-        // if(!parser.is_option_set('k'))
-        //     throw sharg::user_input_error("specify k");
     }
     else if(args.cmd == "lookup") {
         if(!parser.is_option_set('q'))
@@ -110,6 +108,7 @@ int main(int argc, char** argv)
         check_arguments(parser, args);
     }
     catch (sharg::parser_error const &ext) {
+        std::cerr << "[PARSER ERROR] " << ext.what() << '\n';
         return -1;
     }
 
@@ -123,8 +122,14 @@ int main(int argc, char** argv)
         RSHash index;
         if(args.shapes[0] == std::numeric_limits<uint32_t>::max())
             index = RSHash(args.k, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
-        else
-            index = RSHash(args.shapes[0], args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
+        else {
+            const Shapes32 shapes = shape32_create(args.shapes);
+            if(shapes.length > 32) {
+                std::cerr << "shapes length > 32 not supported\n";
+                return -1;
+            }
+            index = RSHash(shapes, args.level, args.m1, args.m2, args.m3, args.t1, args.t2, args.t3, args.t, args.loc, !args.ht);
+        }
         index.build(text);
         index.save(args.d);
     }
@@ -145,7 +150,10 @@ int main(int argc, char** argv)
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
         for (auto query : queries) {
             found += index.streaming_lookup(query, extensions);
-            kmers += query.size() - index.getk() + 1;
+            if(index.getshapes().shapes[0].value != std::numeric_limits<uint32_t>::max())
+                kmers += query.size() - index.getshapes().length + 1;
+            else
+                kmers += query.size() - index.getk() + 1;
         }
         std::chrono::high_resolution_clock::time_point t_stop = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
@@ -186,8 +194,8 @@ int main(int argc, char** argv)
         for (auto query : queries) {
             found_kmers += index.streaming_locate(query, positions, found_positions);
             found_positions += positions.size();
-            if(index.getshape() != std::numeric_limits<uint32_t>::max())
-                kmers += query.size() - bit_length(index.getshape()) + 1;
+            if(index.getshapes().shapes[0].value != std::numeric_limits<uint32_t>::max())
+                kmers += query.size() - index.getshapes().length + 1;
             else
                 kmers += query.size() - index.getk() + 1;
             // positions.clear();

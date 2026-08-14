@@ -32,7 +32,7 @@ void RSHash::initialise_locatefn_impl()
 
 void RSHash::initialise_locatefn()
 {
-    const bool use_shape = shape.value != std::numeric_limits<uint32_t>::max();
+    const bool use_shape = shapes.shapes[0].value != std::numeric_limits<uint32_t>::max();
     if (use_shape) {
         if (use_ht)
             initialise_locatefn_impl<true, true>();
@@ -73,13 +73,13 @@ inline bool RSHash::locate_last_level(const uint64_t kmer, const uint64_t kmer_r
                 found = true;
             }
         };
-        if constexpr (use_shape) {
-            locate(hashmap, kmer);
-            if(kmer != kmer_rc)
-                locate(hashmap_rc, kmer_rc);
-        }
-        else
-            locate(hashmap, std::min<uint64_t>(kmer, kmer_rc));
+        // if constexpr (use_shape) {
+        //     locate(hashmap, kmer);
+        //     if(kmer != kmer_rc)
+        //         locate(hashmap_rc, kmer_rc);
+        // }
+        // else
+        //     locate(hashmap, std::min<uint64_t>(kmer, kmer_rc));
     }
     else {
         auto locate = [&](auto &ef, auto &sel, uint64_t key) {
@@ -112,13 +112,14 @@ uint64_t RSHash::locate1(const std::vector<uint64_t> &kmers, std::vector<uint64_
     uint64_t minimiser, minimiser_rank, kmer_rank;;
     uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
 
     for(uint64_t kmer : kmers) {
         uint64_t kmer_rc = crc(kmer, window_size);
 
         if constexpr (use_shape) {
-            kernel = (kmer & kernel_mask) >> 2*shape.overlap_right;
-            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape.overlap_left;
+            kernel = (kmer & shapes.kernel_mask) >> 2*shapes.overlap;
+            kernel_rev = (kmer_rc & shapes.kernel_mask) >> 2*shapes.overlap;
             kmer = _pext_u64(kmer, shape.mask);
             kmer_rc = _pext_u64(kmer_rc, shape.mask_rev);
         }
@@ -151,13 +152,14 @@ uint64_t RSHash::locate2(const std::vector<uint64_t> &kmers, std::vector<uint64_
     uint64_t minimiser, minimiser_rank, kmer_rank;
     uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
 
     for(uint64_t kmer : kmers) {
         uint64_t kmer_rc = crc(kmer, window_size);
 
         if constexpr (use_shape) {
-            kernel = (kmer & kernel_mask) >> 2*shape.overlap_right;
-            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape.overlap_left;
+            kernel = (kmer & shapes.kernel_mask) >> 2*shapes.overlap;
+            kernel_rev = (kmer_rc & shapes.kernel_mask) >> 2*shapes.overlap;
             kmer = _pext_u64(kmer, shape.mask);
             kmer_rc = _pext_u64(kmer_rc, shape.mask_rev);
         }
@@ -198,13 +200,14 @@ uint64_t RSHash::locate3(const std::vector<uint64_t> &kmers, std::vector<uint64_
     uint64_t minimiser, minimiser_rank, kmer_rank;
     uint64_t kernel, kernel_rev;
     size_t left_minimiser_position, right_minimiser_position;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
 
     for(uint64_t kmer : kmers) {
         uint64_t kmer_rc = crc(kmer, window_size);
 
         if constexpr (use_shape) {
-            kernel = (kmer & kernel_mask) >> 2*shape.overlap_right;
-            kernel_rev = (kmer_rc & kernel_mask_rev) >> 2*shape.overlap_left;
+            kernel = (kmer & shapes.kernel_mask) >> 2*shapes.overlap;
+            kernel_rev = (kmer_rc & shapes.kernel_mask) >> 2*shapes.overlap;
             kmer = _pext_u64(kmer, shape.mask);
             kmer_rc = _pext_u64(kmer_rc, shape.mask_rev);
         }
@@ -270,6 +273,7 @@ inline uint64_t RSHash::check_pos(const uint64_t kmer, const uint64_t kmer_rc,
     }
 
     uint64_t positions = 0;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
     for(size_t i = 0; i < no_skmers; i++) {
         uint64_t offset = offsets[i];
         uint64_t pos = span-1-left_minimiser_position;
@@ -323,6 +327,7 @@ inline bool RSHash::report_minimiser_pos(uint64_t *buffer, uint64_t offset,
         span = span3;
 
     uint64_t candidate, candidate_rc, pos, pos_rc;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
     if constexpr (use_shape) {
         pos = overlap - shape.overlap_right + span-1-minimiser_pos;
         pos_rc = overlap - shape.overlap_left + minimiser_pos;
@@ -370,6 +375,7 @@ inline bool RSHash::report_minimiser_pos2(uint64_t *buffer, uint64_t offset,
 
     uint64_t left_candidate, left_candidate_rc, right_candidate, right_candidate_rc;
     uint64_t left_pos, left_pos_rc, right_pos, right_pos_rc;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
     if constexpr (use_shape) {
         left_pos = overlap - shape.overlap_right + span-1-left_minimiser_pos;
         left_pos_rc = overlap - shape.overlap_left + left_minimiser_pos;
@@ -448,16 +454,12 @@ inline void RSHash::locate_buffer(uint64_t *buffer, uint64_t *offsets, uint64_t 
         for(size_t i = 0; i < no_minimiser; i++) {
             found |= report_minimiser_pos2<level, use_shape>(buffer, offsets[i], query, queryrc, no_positions, s, left_minimiser_pos, right_minimiser_pos, sequence_ends[2*i], sequence_ends[2*i+1], positions);
             s += span;
-            if constexpr (use_shape)
-                s += overlap;
         }
     }
     else {
         for(size_t i = 0; i < no_minimiser; i++) {
             found |= report_minimiser_pos<level, use_shape>(buffer, offsets[i], query, queryrc, no_positions, s, left_minimiser_pos, sequence_ends[2*i], sequence_ends[2*i+1], positions);
             s += span;
-            if constexpr (use_shape)
-                s += overlap;
         }
     }
     
@@ -482,12 +484,13 @@ uint64_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4
     size_t left_minimiser_position, right_minimiser_position;
     bool begin = true;
     uint64_t kernel, kernel_rev, kmer, kmer_rc;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
 
     for (auto&& window : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if constexpr (use_shape) {
-            kernel = (window.value & kernel_mask) >> 2*shape.overlap_right;
-            kernel_rev = (window.value_rev & kernel_mask_rev) >> 2*shape.overlap_left;
+            kernel = (kmer & shapes.kernel_mask) >> 2*shapes.overlap;
+            kernel_rev = (kmer_rc & shapes.kernel_mask) >> 2*shapes.overlap;
             kmer = _pext_u64(window.value, shape.mask);
             kmer_rc = _pext_u64(window.value_rev, shape.mask_rev);
         }
@@ -511,7 +514,7 @@ uint64_t RSHash::streaming_locate1(const seqan3::bitpacked_sequence<seqan3::dna4
             const size_t minimiser_position = s1_select.select(minimiser_rank);
             no_minimiser = s1_select.select(minimiser_rank+1) - minimiser_position;
 
-            fill_buffer2<1, use_shape>(offsets, kmer_buffer, sequence_ends, minimiser_position, no_minimiser);
+            fill_buffer2<1>(offsets, kmer_buffer, sequence_ends, minimiser_position, no_minimiser);
             locate_buffer<1, use_shape>(kmer_buffer, offsets, sequence_ends, no_minimiser, kmer, kmer_rc, left_minimiser_position, right_minimiser_position, positions, no_positions, found_kmers);
             current_pos_minimiser = minimiser;
         }
@@ -553,12 +556,13 @@ uint64_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4
     bool rolling1 = false;
     bool rolling2 = false;
     uint64_t kernel, kernel_rev, kmer, kmer_rc;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
 
     for (auto&& window : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if constexpr (use_shape) {
-            kernel = (window.value & kernel_mask) >> 2*shape.overlap_right;
-            kernel_rev = (window.value_rev & kernel_mask_rev) >> 2*shape.overlap_left;
+            kernel = (kmer & shapes.kernel_mask) >> 2*shapes.overlap;
+            kernel_rev = (kmer_rc & shapes.kernel_mask) >> 2*shapes.overlap;
             kmer = _pext_u64(window.value, shape.mask);
             kmer_rc = _pext_u64(window.value_rev, shape.mask_rev);
         }
@@ -584,7 +588,7 @@ uint64_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4
                 const size_t minimiser_position1 = s1_select.select(minimiser_rank1);
                 no_minimiser1 = s1_select.select(minimiser_rank1+1) - minimiser_position1;
 
-                fill_buffer2<1, use_shape>(offsets1, kmer_buffer1, sequence_ends1, minimiser_position1, no_minimiser1);
+                fill_buffer2<1>(offsets1, kmer_buffer1, sequence_ends1, minimiser_position1, no_minimiser1);
                 locate_buffer<1, use_shape>(kmer_buffer1, offsets1, sequence_ends1, no_minimiser1, kmer, kmer_rc, left_minimiser_position1, right_minimiser_position1, positions, no_positions, found_kmers);
                 current_pos_minimiser1 = minimiser1;
                 rolling2 = false;
@@ -604,7 +608,7 @@ uint64_t RSHash::streaming_locate2(const seqan3::bitpacked_sequence<seqan3::dna4
                     const size_t minimiser_position2 = s2_select.select(minimiser_rank2);
                     no_minimiser2 = s2_select.select(minimiser_rank2+1) - minimiser_position2;
 
-                    fill_buffer2<2, use_shape>(offsets2, kmer_buffer2, sequence_ends2, minimiser_position2, no_minimiser2);
+                    fill_buffer2<2>(offsets2, kmer_buffer2, sequence_ends2, minimiser_position2, no_minimiser2);
                     locate_buffer<2, use_shape>(kmer_buffer2, offsets2, sequence_ends2, no_minimiser2, kmer, kmer_rc, left_minimiser_position2, right_minimiser_position2, positions, no_positions, found_kmers);
                     current_pos_minimiser2 = minimiser2;
                     current_neg_minimiser1 = minimiser1;
@@ -659,12 +663,13 @@ uint64_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4
     bool rolling2 = false;
     bool rolling3 = false;
     uint64_t kernel, kernel_rev, kmer, kmer_rc;
+    Shape32 shape = shapes.shapes[0]; // todo: multiple shapes
 
     for (auto&& window : query | rshash::views::kmerview({.window_size = window_size}))
     {
         if constexpr (use_shape) {
-            kernel = (window.value & kernel_mask) >> 2*shape.overlap_right;
-            kernel_rev = (window.value_rev & kernel_mask_rev) >> 2*shape.overlap_left;
+            kernel = (window.value & shapes.kernel_mask) >> 2*shapes.overlap;
+            kernel_rev = (window.value_rev & shapes.kernel_mask) >> 2*shapes.overlap;
             kmer = _pext_u64(window.value, shape.mask);
             kmer_rc = _pext_u64(window.value_rev, shape.mask_rev);
         }
@@ -691,7 +696,7 @@ uint64_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4
                 const size_t minimiser_position1 = s1_select.select(minimiser_rank1);
                 no_minimiser1 = s1_select.select(minimiser_rank1+1) - minimiser_position1;
 
-                fill_buffer2<1, use_shape>(offsets1, kmer_buffer1, sequence_ends1, minimiser_position1, no_minimiser1);
+                fill_buffer2<1>(offsets1, kmer_buffer1, sequence_ends1, minimiser_position1, no_minimiser1);
                 locate_buffer<1, use_shape>(kmer_buffer1, offsets1, sequence_ends1, no_minimiser1, kmer, kmer_rc, left_minimiser_position1, right_minimiser_position1, positions, no_positions, found_kmers);
                 current_pos_minimiser1 = minimiser1;
                 rolling2 = false;
@@ -713,7 +718,7 @@ uint64_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4
                     const size_t minimiser_position2 = s2_select.select(minimiser_rank2);
                     no_minimiser2 = s2_select.select(minimiser_rank2+1) - minimiser_position2;
 
-                    fill_buffer2<2, use_shape>(offsets2, kmer_buffer2, sequence_ends2, minimiser_position2, no_minimiser2);
+                    fill_buffer2<2>(offsets2, kmer_buffer2, sequence_ends2, minimiser_position2, no_minimiser2);
                     locate_buffer<2, use_shape>(kmer_buffer2, offsets2, sequence_ends2, no_minimiser2, kmer, kmer_rc, left_minimiser_position2, right_minimiser_position2, positions, no_positions, found_kmers);
                     current_pos_minimiser2 = minimiser2;
                     current_neg_minimiser1 = minimiser1;
@@ -734,7 +739,7 @@ uint64_t RSHash::streaming_locate3(const seqan3::bitpacked_sequence<seqan3::dna4
                         const size_t minimiser_position3 = s3_select.select(minimiser_rank3);
                         no_minimiser3 = s3_select.select(minimiser_rank3+1) - minimiser_position3;
 
-                        fill_buffer2<3, use_shape>(offsets3, kmer_buffer3, sequence_ends3, minimiser_position3, no_minimiser3);
+                        fill_buffer2<3>(offsets3, kmer_buffer3, sequence_ends3, minimiser_position3, no_minimiser3);
                         locate_buffer<3, use_shape>(kmer_buffer3, offsets3, sequence_ends3, no_minimiser3, kmer, kmer_rc, left_minimiser_position3, right_minimiser_position3, positions, no_positions, found_kmers);
                         current_pos_minimiser3 = minimiser3;
                         current_neg_minimiser1 = minimiser1;

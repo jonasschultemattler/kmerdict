@@ -13,13 +13,13 @@ run()
 {
     f="$1"
     BASENAME=$(echo "$f" | sed 's/\.fa.gz$//')
-    k=31    
+    k=31
         if [[ "$BASENAME" == *"bacterial"* ]]; then
           params=( 18 0 0 128 0 0 1  19 0 0 128 0 0 1 )
         elif [[ "$BASENAME" == *"human"* ]]; then
           params=( 17 21 25 64 64 128 3  17 0 0 128 0 0 1 )
         elif [[ "$BASENAME" == *"cod"* ]]; then
-          params=( 16 20 24 64 64 128 3  16 0 0 128 0 0 1 )
+          params=( 16 20 23 64 64 128 3  16 0 0 128 0 0 1 )
         elif [[ "$BASENAME" == *"kestrel"* ]]; then
           params=( 17 20 0 64 128 0 2  18 0 0 128 0 0 1 )
         fi
@@ -68,11 +68,12 @@ run()
           # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc > OUT 2>&1
           # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
           # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc -t 255 > OUT 2>&1
-          /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 2147483641  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc > OUT 2>&1
-          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 2147483641  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
-          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 2147483647  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
-          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 1610612729  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
-          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shape 1610612733  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shapes 2147483641  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc > OUT 2>&1
+          /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shapes 2147483641 --shapes 2147483643  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 --loc > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" -k $k --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 -t 255 --loc > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shapes 2147483647  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shapes 1610612729  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
+          # /usr/bin/time -v -o time.txt $PROGRAM build -i "$f" -d "${BASENAME}_.dict" --shapes 1610612733  --level $l --m1 $m1 --m2 $m2 --m3 $m3 --t1 $t1 --t2 $t2 --t3 $t3 > OUT 2>&1
           
           cat OUT >> $LOG
 
@@ -86,7 +87,7 @@ run()
           density_s1=$(awk '/density s1/ {print $3}' OUT | tr -d '%')
           density_s2=$(awk '/density s2/ {print $3}' OUT | tr -d '%')
           density_s3=$(awk '/density s3/ {print $3}' OUT | tr -d '%')
-          density_ht=$(grep "no kmers HT:" OUT | awk '{print $(NF)}' | sed 's/%//')
+          density_ht=$(grep "no freq kmers:" OUT | awk '{print $(NF)}' | sed 's/%//')
           no_kmers=$(awk '/textkmers/ {print $2}' OUT)
           no_minimiser1=$(awk '/no minimiser1/ {print $3}' OUT)
           no_minimiser2=$(awk '/no minimiser2/ {print $3}' OUT)
@@ -97,13 +98,15 @@ run()
           spaceoffsets1=$(grep '^offsets1:' OUT | cut -d':' -f2 | xargs)
           spaceoffsets2=$(grep '^offsets2:' OUT | cut -d':' -f2 | xargs)
           spaceoffsets3=$(grep '^offsets3:' OUT | cut -d':' -f2 | xargs)
-          spaceht=$(grep '^Hashtable:' OUT | cut -d':' -f2 | xargs)
+          spaceoffsets4=$(grep '^offsets4:' OUT | cut -d':' -f2 | xargs)
+          spaceht=$(grep '^Last_level:' OUT | cut -d':' -f2 | xargs)
           spacer1=$(grep '^R_1:' OUT | cut -d':' -f2 | xargs)
           spacer2=$(grep '^R_2:' OUT | cut -d':' -f2 | xargs)
           spacer3=$(grep '^R_3:' OUT | cut -d':' -f2 | xargs)
           spaces1=$(grep '^S_1:' OUT | cut -d':' -f2 | xargs)
           spaces2=$(grep '^S_2:' OUT | cut -d':' -f2 | xargs)
           spaces3=$(grep '^S_3:' OUT | cut -d':' -f2 | xargs)
+          spaces4=$(grep '^S_4:' OUT | cut -d':' -f2 | xargs)
           spacetotal=$(grep '^total:' OUT | cut -d':' -f2 | xargs)
           memtotal=$(grep '^total:' OUT | cut -d':' -f2 | xargs)
           spacetotal=$(echo "scale=2; $file_size / $no_kmers * 8" | bc)
@@ -142,15 +145,18 @@ run()
               querytimekmer=$(grep 'time_per_kmer' OUT | awk -F'=' '{print $2}' | awk '{print $1}' | sed 's/ns//')
               extensions=$(grep 'extensions' OUT | awk -F'=' '{print $2}' | awk '{print $1}')
 
-              /usr/bin/time -v -o time.txt $PROGRAM bench -d "${BASENAME}_.dict" > OUT 2>&1
+              # /usr/bin/time -v -o time.txt $PROGRAM bench -d "${BASENAME}_.dict" > OUT 2>&1
               cat OUT >> $LOG
-              lookup_pos=$(grep '^pos_time_per_kmer' OUT | cut -d= -f2 | xargs)
-              lookup_neg=$(grep '^neg_time_per_kmer' OUT | cut -d= -f2 | xargs)
+              # lookup_pos=$(grep '^pos_time_per_kmer' OUT | cut -d= -f2 | xargs)
+              # lookup_neg=$(grep '^neg_time_per_kmer' OUT | cut -d= -f2 | xargs)
+              locate_pos=$(grep '^pos_locate_time_per_kmer' OUT | cut -d= -f2 | xargs)
+              locate_neg=$(grep '^neg_locate_time_per_kmer' OUT | cut -d= -f2 | xargs)
 
-              echo "lookup_neg: $lookup_neg"
-              echo "lookup_pos: $lookup_pos"
+              echo "locate_neg: $locate_neg"
+              echo "locate_pos: $locate_pos"
 
-              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found,$positions,$lookup_neg" >> "$CSV"
+              # echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spaceoffsets4,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaces4,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found,$positions,$locate_neg" >> "$CSV"
+              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spaceoffsets4,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaces4,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found,$positions,$lookup_neg" >> "$CSV"
 
               # rm -f time.txt
               # rm -f OUT
@@ -187,7 +193,8 @@ run()
               querytimekmer=$(grep 'time_per_kmer' OUT | awk -F'=' '{print $2}' | awk '{print $1}' | sed 's/ns//')
               extensions=$(grep 'extensions' OUT | awk -F'=' '{print $2}' | awk '{print $1}')
               
-              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found,$positions,$lookup_pos" >> "$CSV"
+              # echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spaceoffsets4,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaces4,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found,$positions,$locate_pos" >> "$CSV"
+              echo "$f,$query,$k,$m1,$m2,$m3,$t1,$t2,$t3,$buildtime,$buildmem",$file_size,$spaceoffsets1,$spaceoffsets2,$spaceoffsets3,$spaceoffsets4,$spacer1,$spacer2,$spacer3,$spaces1,$spaces2,$spaces3,$spaces4,$spaceht,$density_r1,$density_r2,$density_r3,$density_s1,$density_s2,$density_s3,$density_ht,$no_minimiser1,$no_minimiser2,$no_minimiser3,$no_distinct_minimiser1,$no_distinct_minimiser2,$no_distinct_minimiser3,$spacetotal,$memtotal,$querytimekmer,$querymem,$extensions,$k_mers",$found,$positions,$lookup_pos" >> "$CSV"
 
               # rm -f time.txt
               # rm -f OUT
@@ -204,7 +211,8 @@ run()
 # FILES=( "../../datasets/cod.genome.fixed.fa.gz" "../../datasets/kestrel.genome.fixed.fa.gz" "../../datasets/human.genome.fixed.fa.gz" "../../datasets/bacterial.genome.fixed.fa.gz")
 # FILES=( "../../datasets/cod.genome.fixed.fa" "../../datasets/kestrel.genome.fixed.fa.gz" "../../datasets/human.genome.fixed.fa.gz" )
 FILES=( "../../datasets/cod.genome.preproc.fa" "../../datasets/kestrel.genome.preproc.fa.gz" "../../datasets/human.genome.preproc.fa.gz" )
-echo "textfile,queryfile,k,m1,m2,m3,t1,t2,t3,buildtime [s],buildmem [B],indexsize [B],spaceoffsets1 [bits/kmer],spaceoffsets2 [bits/kmer],spaceoffsets3 [bits/kmer],spaceR1 [bits/kmer],spaceR2 [bits/kmer],spaceR3 [bits/kmer],spaceS1 [bits/kmer],spaceS2 [bits/kmer],spaceS3 [bits/kmer],HT [bits/kmer],density_r1 [%],density_r2 [%],density_r3 [%],density_s1 [%],density_s2 [%],density_s3 [%],kmers HT [%],no minimizer1,no minimizer2,no minimizer3, no distinct minimizer1,no distinct minimizer2,no distinct minimizer3,space theo [bits/kmer],mem theo [bits/kmer],querytime [ns/kmer],querymem [B],extensions,kmers,found,positions,lookup" > "$CSV"
+echo "textfile,queryfile,k,m1,m2,m3,t1,t2,t3,buildtime [s],buildmem [B],indexsize [B],spaceoffsets1 [bits/kmer],spaceoffsets2 [bits/kmer],spaceoffsets3 [bits/kmer],spaceoffsets4 [bits/kmer],spaceR1 [bits/kmer],spaceR2 [bits/kmer],spaceR3 [bits/kmer],spaceS1 [bits/kmer],spaceS2 [bits/kmer],spaceS3 [bits/kmer],spaceS4 [bits/kmer],last level [bits/kmer],density_r1 [%],density_r2 [%],density_r3 [%],density_s1 [%],density_s2 [%],density_s3 [%],freq kmers [%],no minimizer1,no minimizer2,no minimizer3, no distinct minimizer1,no distinct minimizer2,no distinct minimizer3,space disk [bits/kmer],mem theo [bits/kmer],querytime [ns/kmer],querymem [B],extensions,kmers,found,positions,single lookup [ns]" > "$CSV"
+# echo "textfile,queryfile,k,m1,m2,m3,t1,t2,t3,buildtime [s],buildmem [B],indexsize [B],spaceoffsets1 [bits/kmer],spaceoffsets2 [bits/kmer],spaceoffsets3 [bits/kmer],spaceoffsets4 [bits/kmer],spaceR1 [bits/kmer],spaceR2 [bits/kmer],spaceR3 [bits/kmer],spaceS1 [bits/kmer],spaceS2 [bits/kmer],spaceS3 [bits/kmer],spaceS4 [bits/kmer],last level [bits/kmer],density_r1 [%],density_r2 [%],density_r3 [%],density_s1 [%],density_s2 [%],density_s3 [%],freq kmers [%],no minimizer1,no minimizer2,no minimizer3, no distinct minimizer1,no distinct minimizer2,no distinct minimizer3,space disk [bits/kmer],mem theo [bits/kmer],querytime [ns/kmer],querymem [B],extensions,kmers,found,positions,single locate [ns]" > "$CSV"
 for f in "${FILES[@]}"; do
   run $f
 done
